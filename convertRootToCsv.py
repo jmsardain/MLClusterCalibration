@@ -19,8 +19,8 @@ def transDataframe(df, column_names):
         arr = np.array(df[i].values)
         if i == "clusterE" or i == "cluster_FIRST_ENG_DENS":
             arr = np.log(arr)
-        minValue = np.min(arr)
-        maxValue = np.max(arr)
+        minValue = np.quantile(a, 0.01) # np.min(arr)
+        maxValue = np.quantile(a, 0.99) # np.max(arr)
         # -- transformation found in https://www.dropbox.com/s/kqynnef5y2nelvm/ProjectNotes.pdf?dl=0
         if i != "r_e_calculated":
             newcol = a + (b-a) * (arr - minValue) / (maxValue - minValue)
@@ -98,7 +98,7 @@ def main():
     #train = transDataframe(df_train, column_names)
     #test  = transDataframe(df_test,  column_names)
     train = df_train
-    test = df_test 
+    test = df_test
     # -- Make plots
     if args.plot:
         plot(df_train, train, prefix="train")

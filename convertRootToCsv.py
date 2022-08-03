@@ -3,6 +3,8 @@ import pandas as pd
 import numpy  as np
 import argparse
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import  QuantileTransformer
+
 
 def splitDataframe(df, cutoff=0.8):
     cut = int(len(df.index)*.8)
@@ -11,21 +13,32 @@ def splitDataframe(df, cutoff=0.8):
     return train, test
 
 
-def transDataframe(df, column_names):
+def transDataframe(df, column_names, prefix=""):
     a = -1
     b = 1
     res = pd.DataFrame(columns=column_names)
+    if prefix=="test":
+        print("Take these minima and maxima for test.csv, and implement them in the plotting code to get f^{-1}")
     for i in df.columns:
         arr = np.array(df[i].values)
         if i == "clusterE" or i == "cluster_FIRST_ENG_DENS":
             arr = np.log(arr)
-        minValue = np.quantile(a, 0.01) # np.min(arr)
-        maxValue = np.quantile(a, 0.99) # np.max(arr)
+
+        brr = [[i] for i in arr]
+        # minValue = np.quantile(arr, 0.02) # np.min(arr)
+        # maxValue = np.quantile(arr, 0.98) # np.max(arr)
+        # minValue = np.min(arr)
+        # maxValue = np.max(arr)
+        #maskmin = arr > minValue
+        #maskmax = arr < maxValue
+        #arr = arr[maskmin & maskmax]
+        # if prefix=="test":
+        #     print("minmax{}=[{}, {}]".format(i, minValue, maxValue))
         # -- transformation found in https://www.dropbox.com/s/kqynnef5y2nelvm/ProjectNotes.pdf?dl=0
-        if i != "r_e_calculated":
-            newcol = a + (b-a) * (arr - minValue) / (maxValue - minValue)
-        if i == "r_e_calculated": ## do not make any transformation
-            newcol = arr
+        # newcol = a + (b-a) * (arr - minValue) / (maxValue - minValue)
+        quantile = QuantileTransformer(output_distribution='normal')
+        data_trans = quantile.fit_transform(brr)
+        newcol = data_trans.flatten()
         res[i] = newcol
 
     return res
@@ -38,6 +51,9 @@ def plot(df_before, df_after, prefix=""):
         arr_after  = np.array(df_after[i].values)
 
         # -- Define 100 bins between min and max
+        bins_before = np.linspace(np.min(arr_before), np.max(arr_before), 101, endpoint=True)
+        bins_after  = np.linspace(np.min(arr_after),  np.max(arr_after), 101, endpoint=True)
+
         bins_before = np.linspace(np.min(arr_before), np.max(arr_before), 101, endpoint=True)
         bins_after  = np.linspace(np.min(arr_after),  np.max(arr_after), 101, endpoint=True)
 
@@ -67,6 +83,7 @@ def main():
     parser = argparse.ArgumentParser(description='Prepare CSV files for MLClusterCalibration')
     parser.add_argument('--plot', dest='plot', action='store_const', const=True, default=False, help='Save plots (default: False)')
     parser.add_argument('--cutoff', dest='cutoff', type=float, default=0.8, help='Train / Total dataset (default: 0.8)')
+    parser.add_argument('--norm', dest='norm', action='store_const', const=True, default=False, help='Transform input features')
     args = parser.parse_args()
 
     # -- Start
@@ -95,10 +112,13 @@ def main():
     df_test  = df_test[df_test["cluster_FIRST_ENG_DENS"] != 0]
 
     # -- Get min and max and transform dataframes (not sure if we have to do it for each dataframe or for the original dataframe)
-    #train = transDataframe(df_train, column_names)
-    #test  = transDataframe(df_test,  column_names)
-    train = df_train
-    test = df_test
+    if args.norm:
+        train = transDataframe(df_train, column_names)
+        test  = transDataframe(df_test,  column_names, "test")
+    else:
+        train = df_train
+        test = df_test
+
     # -- Make plots
     if args.plot:
         plot(df_train, train, prefix="train")

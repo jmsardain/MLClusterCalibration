@@ -51,15 +51,16 @@ def main():
 		r_e_calc, test_predictions = test(filename, args.path)
 		utils.plotRealVsPredict(r_e_calc, test_predictions)
 		utils.plotRealPredict(r_e_calc, test_predictions)
+		utils.plotRealPredictFit(r_e_calc, test_predictions)
 		#utils.plotError(r_e_calc, test_predictions)
 		#utils.plotError(r_e_calc, test_predictions)
 
 	# -- Get 2D plot
 	if args.plot:
-		filename = pathToCSVFile+"results.csv"
-		utils.finalplot(filename)
-		print("Under construction")
-
+		filetest = pathToCSVFile+"test.csv"
+		fileres  = pathToCSVFile+"results.csv"
+		df_plot = utils.finalplot(filetest, fileres)
+		df_plot.to_csv("/home/jmsardain/JetCalib/FinalPlots/plot.csv", sep=' ', index=False)
 
 	return
 

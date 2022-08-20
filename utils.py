@@ -93,7 +93,7 @@ def finalplot(testName, resultName):
     #         return
 
     # -- Create new dataframe that will be used for final plots
-    columnsname = col + ['r_e_predec', 'cluster_ENG_CALIB_TOT', 'cluster_ENG_TOT_frompred']
+    columnsname = col + ['r_e_predec', 'cluster_ENG_CALIB_TOT', 'cluster_ENG_TOT_frompred', 'clusterECalib']
     df_plot = pd.DataFrame(columns=columnsname)
 
     for icolumn in columnsname:

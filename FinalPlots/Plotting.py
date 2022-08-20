@@ -27,6 +27,21 @@ def BinLogX(h):
     del newbins
     pass
 
+def BinLogY(h):
+    axis = h.GetYaxis()
+    bins = h.GetNbinsY()
+
+    a = axis.GetXmin()
+    b = axis.GetXmax()
+    width = (b-a) / bins
+    newbins1 = np.zeros([bins + 1])
+    for i in range(bins+1):
+        newbins1[i] = pow(10, a + i * width)
+
+    axis.Set(bins, newbins1)
+    del newbins1
+    pass
+
 def main():
 
     if args.rangeE == 'all':
@@ -50,9 +65,10 @@ def main():
 
     EnergyNoLogE         = False
     EnergyLogE           = False
+    Energy2DPlot         = True
     Reponse2DPlot        = False
     Reponse1DPlot        = False
-    RatioVsInputFeatures = True
+    RatioVsInputFeatures = False
 
     # -- Plot cluster energy (truth, predicted, ) with no log scale for x axis
     if EnergyNoLogE:
@@ -183,6 +199,64 @@ def main():
         c.logx()
         c.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) ), "Correlation: %.4f " % (corr)], qualifier='Simulation Internal')
         c.save("./plots/{}/Comparison_Truth_Pred_Log.png".format(args.rangeE))
+
+    if Energy2DPlot:
+        c = ap.canvas(batch=True, size=(600,600))
+        c1 = ap.canvas(batch=True, size=(600,600))
+        c.pads()[0]._bare().SetRightMargin(0.2)
+        c.pads()[0]._bare().SetLogz()
+        c1.pads()[0]._bare().SetRightMargin(0.2)
+        c1.pads()[0]._bare().SetLogz()
+        xaxis = np.linspace(-1, 3,  100 + 1, endpoint=True)
+        yaxis = np.linspace(-1, 3,  100 + 1, endpoint=True)
+
+        h1_backdrop = ROOT.TH2F('', "", 1, np.array([xaxis[0], xaxis[-1]]), 1, np.array([yaxis[0], yaxis[-1] + 0.55 * (yaxis[-1] - yaxis[0])]))
+        h1a = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+        h1b = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+
+        BinLogX(h1_backdrop)
+        BinLogY(h1_backdrop)
+        BinLogX(h1a)
+        BinLogY(h1a)
+        if args.rangeE == 'lowE' or args.rangeE == 'highE':
+            BinLogX(h1b)
+            BinLogY(h1b)
+
+        truthClusTotalE = np.array(df["cluster_ENG_CALIB_TOT"])
+        predClusTotalE  = np.array(df["cluster_ENG_TOT_frompred"])
+        if args.rangeE == 'lowE' or args.rangeE == 'highE':
+            calibClusTotalE = np.array(df["clusterECalib"])
+
+
+        for iter in range(len(truthClusTotalE)):
+            h1a.Fill(truthClusTotalE[iter] , predClusTotalE[iter])
+            if args.rangeE == 'lowE' or args.rangeE == 'highE':
+                h1b.Fill(truthClusTotalE[iter] , calibClusTotalE[iter])
+
+        c.hist2d(h1_backdrop, option='AXIS')
+        c.hist2d(h1a,         option='COLZ')
+        c.hist2d(h1_backdrop, option='AXIS')
+        line = c.line(1e-1, 1e-1, 1e3, 1e3, linecolor=ROOT.kRed, linewidth=2)
+        c.logx()
+        c.log()
+        c.xlabel('Truth cluster energy [GeV]')
+        c.ylabel('Predicted cluster energy [GeV]')
+        c.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
+        c.save("./plots/{}/Energy2Dplot_Truth_Pred.png".format(args.rangeE))
+
+
+        if args.rangeE == 'lowE' or args.rangeE == 'highE':
+            c1.hist2d(h1_backdrop, option='AXIS')
+            c1.hist2d(h1b,         option='COLZ')
+            c1.hist2d(h1_backdrop, option='AXIS')
+            line = c1.line(1e-1, 1e-1, 1e3, 1e3, linecolor=ROOT.kRed, linewidth=2)
+            c1.logx()
+            c1.log()
+            c1.xlabel('Truth cluster energy [GeV]')
+            c1.ylabel('Calibrated cluster energy [GeV]')
+            c1.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
+            c1.save("./plots/{}/Energy2Dplot_Truth_Calib.png".format(args.rangeE))
+
 
 
     if Reponse2DPlot:

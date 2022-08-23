@@ -1,7 +1,7 @@
 import ROOT
 import numpy as np
 import pandas as pd
-from scipy.stats import pearsonr, mode
+from scipy.stats import pearsonr, mode, iqr
 import math
 import argparse
 from rootplotting import ap
@@ -65,10 +65,12 @@ def main():
 
     EnergyNoLogE         = False
     EnergyLogE           = False
-    Energy2DPlot         = True
+    Energy2DPlot         = False
     Reponse2DPlot        = False
     Reponse1DPlot        = False
     RatioVsInputFeatures = False
+    MedianIQR            = False ## Peter email Aug 23
+    Linearity            = True ## Peter email Aug 23
 
     # -- Plot cluster energy (truth, predicted, ) with no log scale for x axis
     if EnergyNoLogE:
@@ -95,20 +97,17 @@ def main():
         # -- Get the arrays
         truthClusTotalE = np.array(df["cluster_ENG_CALIB_TOT"])
         predClusTotalE  = np.array(df["cluster_ENG_TOT_frompred"])
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            calibClusTotalE = np.array(df["clusterECalib"])
+        calibClusTotalE = np.array(df["clusterECalib"])
 
         # -- Define histograms
         htruthClusTotalE = c.hist(truthClusTotalE, bins=xaxis, option='HIST', label='Truth total E',      linecolor=2)
         hpredClusTotalE  = c.hist(predClusTotalE,  bins=xaxis, option='HIST', label='Predicted total E',  linecolor=4)
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            hcalibClusTotalE = c.hist(calibClusTotalE, bins=xaxis, option='HIST', label='Calibrated total E', linecolor=8)
+        hcalibClusTotalE = c.hist(calibClusTotalE, bins=xaxis, option='HIST', label='Calibrated total E', linecolor=8)
 
         p1.ylim(0., 2.)
         c.ratio_plot((htruthClusTotalE,  htruthClusTotalE),  option='E2',      linecolor=2) #, oob=True)
         c.ratio_plot((hpredClusTotalE,   htruthClusTotalE),  option='HIST',    linecolor=4) #, oob=True)
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            c.ratio_plot((hcalibClusTotalE,  htruthClusTotalE),  option='HIST',    linecolor=8) #, oob=True)
+        c.ratio_plot((hcalibClusTotalE,  htruthClusTotalE),  option='HIST',    linecolor=8) #, oob=True)
 
 
         p1.yline(1.0)
@@ -152,33 +151,27 @@ def main():
         BinLogX(h1_backdrop)
         BinLogX(htruthClusTotalE)
         BinLogX(hpredClusTotalE)
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            BinLogX(hcalibClusTotalE)
+        BinLogX(hcalibClusTotalE)
         BinLogX(htruthpred)
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            BinLogX(htruthcalib)
+        BinLogX(htruthcalib)
 
         # -- Now let's compare truthClusTotalE and predClusTotalE
         # -- Get the arrays
         truthClusTotalE = np.array(df["cluster_ENG_CALIB_TOT"])
         predClusTotalE  = np.array(df["cluster_ENG_TOT_frompred"])
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            calibClusTotalE = np.array(df["clusterECalib"])
+        calibClusTotalE = np.array(df["clusterECalib"])
 
         for iter in range(len(truthClusTotalE)):
             htruthClusTotalE.Fill(truthClusTotalE[iter])
             hpredClusTotalE.Fill(predClusTotalE[iter])
-            if args.rangeE == 'lowE' or args.rangeE == 'highE':
-                hcalibClusTotalE.Fill(calibClusTotalE[iter])
+            hcalibClusTotalE.Fill(calibClusTotalE[iter])
             htruthpred.Fill(truthClusTotalE[iter]  / predClusTotalE[iter])
-            if args.rangeE == 'lowE' or args.rangeE == 'highE':
-                htruthcalib.Fill(truthClusTotalE[iter] / calibClusTotalE[iter])
+            htruthcalib.Fill(truthClusTotalE[iter] / calibClusTotalE[iter])
         # -- Define histograms
         c.hist(h1_backdrop, option='AXIS')
         c.hist(htruthClusTotalE,  option='HIST', label='Truth total E',      linecolor=2)
         c.hist(hpredClusTotalE,   option='HIST',  label='Predicted total E',   linecolor=4)
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            c.hist(hcalibClusTotalE,  option='HIST', label='Calibrated total E', linecolor=8)
+        c.hist(hcalibClusTotalE,  option='HIST', label='Calibrated total E', linecolor=8)
         c.hist(h1_backdrop, option='AXIS')
 
 
@@ -187,8 +180,7 @@ def main():
         p1.logx()
         c.ratio_plot((htruthClusTotalE,  htruthClusTotalE),  option='E2',      linecolor=2) #, oob=True)
         c.ratio_plot((hpredClusTotalE,   htruthClusTotalE),  option='HIST',    linecolor=4) #, oob=True)
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            c.ratio_plot((hcalibClusTotalE,  htruthClusTotalE),  option='HIST',    linecolor=8 )#, oob=True)
+        c.ratio_plot((hcalibClusTotalE,  htruthClusTotalE),  option='HIST',    linecolor=8 )#, oob=True)
 
         c.xlabel('Cluster energy [GeV]')
         c.ylabel('Events')
@@ -218,20 +210,17 @@ def main():
         BinLogY(h1_backdrop)
         BinLogX(h1a)
         BinLogY(h1a)
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            BinLogX(h1b)
-            BinLogY(h1b)
+        BinLogX(h1b)
+        BinLogY(h1b)
 
         truthClusTotalE = np.array(df["cluster_ENG_CALIB_TOT"])
         predClusTotalE  = np.array(df["cluster_ENG_TOT_frompred"])
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            calibClusTotalE = np.array(df["clusterECalib"])
+        calibClusTotalE = np.array(df["clusterECalib"])
 
 
         for iter in range(len(truthClusTotalE)):
             h1a.Fill(truthClusTotalE[iter] , predClusTotalE[iter])
-            if args.rangeE == 'lowE' or args.rangeE == 'highE':
-                h1b.Fill(truthClusTotalE[iter] , calibClusTotalE[iter])
+            h1b.Fill(truthClusTotalE[iter] , calibClusTotalE[iter])
 
         c.hist2d(h1_backdrop, option='AXIS')
         c.hist2d(h1a,         option='COLZ')
@@ -245,17 +234,17 @@ def main():
         c.save("./plots/{}/Energy2Dplot_Truth_Pred.png".format(args.rangeE))
 
 
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            c1.hist2d(h1_backdrop, option='AXIS')
-            c1.hist2d(h1b,         option='COLZ')
-            c1.hist2d(h1_backdrop, option='AXIS')
-            line = c1.line(1e-1, 1e-1, 1e3, 1e3, linecolor=ROOT.kRed, linewidth=2)
-            c1.logx()
-            c1.log()
-            c1.xlabel('Truth cluster energy [GeV]')
-            c1.ylabel('Calibrated cluster energy [GeV]')
-            c1.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
-            c1.save("./plots/{}/Energy2Dplot_Truth_Calib.png".format(args.rangeE))
+
+        c1.hist2d(h1_backdrop, option='AXIS')
+        c1.hist2d(h1b,         option='COLZ')
+        c1.hist2d(h1_backdrop, option='AXIS')
+        line = c1.line(1e-1, 1e-1, 1e3, 1e3, linecolor=ROOT.kRed, linewidth=2)
+        c1.logx()
+        c1.log()
+        c1.xlabel('Truth cluster energy [GeV]')
+        c1.ylabel('Calibrated cluster energy [GeV]')
+        c1.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
+        c1.save("./plots/{}/Energy2Dplot_Truth_Calib.png".format(args.rangeE))
 
 
 
@@ -293,20 +282,17 @@ def main():
 
         truthResponse  = np.array(df["r_e_calculated"])
         predResponse   = np.array(df["r_e_predec"])
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            calibResponse  = np.array(df["clusterE"] / df["clusterECalib"])
+        calibResponse  = np.array(df["clusterE"] / df["clusterECalib"])
 
         # -- Define histograms
         htruthResponse  = c.hist(truthResponse,  bins=xaxis, option='HIST', label='Calculated', linecolor=2)
         hpredResponse   = c.hist(predResponse,   bins=xaxis, option='HIST', label='Predicted',  linecolor=4)
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            hcalibResponse  = c.hist(calibResponse,  bins=xaxis, option='HIST', label='Calibrated',  linecolor=8)
+        hcalibResponse  = c.hist(calibResponse,  bins=xaxis, option='HIST', label='Calibrated',  linecolor=8)
 
         p1.ylim(0., 2.)
         c.ratio_plot((htruthResponse,  htruthResponse),  option='E2',      linecolor=2) #, oob=True)
         c.ratio_plot((hpredResponse,   htruthResponse),  option='HIST',    linecolor=4) #, oob=True)
-        if args.rangeE == 'lowE' or args.rangeE == 'highE':
-            c.ratio_plot((hcalibResponse,   htruthResponse),  option='HIST',    linecolor=8) #, oob=True)
+        c.ratio_plot((hcalibResponse,   htruthResponse),  option='HIST',    linecolor=8) #, oob=True)
 
         p1.yline(1.0)
         c.xlabel('Energy response')
@@ -320,9 +306,10 @@ def main():
 
     if RatioVsInputFeatures:
 
-        features = ['clusterE', 'cluster_ENG_CALIB_TOT', 'clusterEtaCalib', 'cluster_CENTER_LAMBDA', 'cluster_ENG_FRAC_EM', 'cluster_FIRST_ENG_DENS',
-                    'cluster_LATERAL', 'cluster_LONGITUDINAL', 'cluster_PTD', 'cluster_SECOND_TIME', 'cluster_SIGNIFICANCE',
-                    'nPrimVtx', 'avgMu']
+        # features = ['clusterE', 'cluster_ENG_CALIB_TOT', 'clusterEtaCalib', 'cluster_CENTER_LAMBDA', 'cluster_ENG_FRAC_EM', 'cluster_FIRST_ENG_DENS',
+        #             'cluster_LATERAL', 'cluster_LONGITUDINAL', 'cluster_PTD', 'cluster_SECOND_TIME', 'cluster_SIGNIFICANCE',
+        #             'nPrimVtx', 'avgMu']
+        features = ['clusterE', 'cluster_ENG_CALIB_TOT']
 
         for idx, ifeature in enumerate(features):
             #if ifeature!='clusterE': continue
@@ -373,6 +360,7 @@ def main():
                     continue
                 #print(mode(mode_binX)[0].flatten())
                 h1prof.SetBinContent(ibinx, mode(mode_binX)[0].flatten())
+                h1prof.SetBinError(ibinx, 0)
 
 
 
@@ -380,7 +368,7 @@ def main():
                 c.logx()
             c.hist2d(h1_backdrop, option='AXIS')
             c.hist2d(h1a,         option='COLZ')
-            c.hist(h1prof,        option='P', markercolor=ROOT.kViolet + 7)
+            c.hist(h1prof,        option='P', markercolor=ROOT.kRed)
             c.hist2d(h1_backdrop, option='AXIS')
 
             if ifeature=='clusterE':               xlabelname = 'Calculated cluster energy ' + r'E^{dep}_{clus}' + ' [GeV]'
@@ -403,6 +391,186 @@ def main():
             c.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
             c.save("./plots/{}/Final_{}.png".format(args.rangeE, ifeature))
 
+    if MedianIQR:
+
+        reCalc     = df["r_e_calculated"]
+        rePred     = df["r_e_predec"]
+        trueEnergy = df["cluster_ENG_CALIB_TOT"]
+        c = ap.canvas(batch=True, size=(600,600))
+        c.pads()[0]._bare().SetRightMargin(0.2)
+        c.pads()[0]._bare().SetLogz()
+
+        c1 = ap.canvas(batch=True, size=(600,600))
+        c1.pads()[0]._bare().SetRightMargin(0.2)
+        c1.pads()[0]._bare().SetLogz()
+        xaxis = np.linspace(-1,  3, 100 + 1, endpoint=True)
+        yaxis = np.linspace(0, 2,  100 + 1, endpoint=True)
+
+        h1a = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+        h1b = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+
+        h1CalcResponse = ROOT.TH1F('', '', len(xaxis) - 1, xaxis)
+        h1PredResponse = ROOT.TH1F('', '', len(xaxis) - 1, xaxis)
+
+        BinLogX(h1a)
+        BinLogX(h1b)
+        BinLogX(h1CalcResponse)
+        BinLogX(h1PredResponse)
+
+        h2a = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+        h2b = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+
+        h1CalcResolution = ROOT.TH1F('', '', len(xaxis) - 1, xaxis)
+        h1PredResolution = ROOT.TH1F('', '', len(xaxis) - 1, xaxis)
+
+        BinLogX(h2a)
+        BinLogX(h2b)
+        BinLogX(h1CalcResolution)
+        BinLogX(h1PredResolution)
+
+
+
+
+        for iter in range(len(reCalc)):
+            h1a.Fill(trueEnergy[iter], reCalc[iter])
+            h1b.Fill(trueEnergy[iter], rePred[iter])
+            h2a.Fill(trueEnergy[iter], reCalc[iter])
+            h2b.Fill(trueEnergy[iter], rePred[iter])
+
+
+        for ibinx in range(1, h1a.GetNbinsX()+1):
+            median_binX = []
+            for ibiny in range(1, h1a.GetNbinsY()+1):
+                n = int(h1a.GetBinContent(ibinx, ibiny))
+                for _ in range(n):
+                    median_binX.append(h1a.GetYaxis().GetBinCenter(ibiny))
+                    pass
+            if not median_binX:
+                continue
+            #print(mode(mode_binX)[0].flatten())
+            calcMedian =  np.median(median_binX)
+            calcIQR =  iqr(median_binX, rng=(16, 84)) / (2 * np.median(median_binX))
+            h1CalcResponse.SetBinContent(ibinx, calcMedian)
+            h1CalcResolution.SetBinContent(ibinx, calcIQR)
+            h1CalcResponse.SetBinError(ibinx, 0)
+            h1CalcResolution.SetBinError(ibinx, 0)
+
+
+        for ibinx in range(1, h1b.GetNbinsX()+1):
+            median_binX = []
+            for ibiny in range(1, h1b.GetNbinsY()+1):
+                n = int(h1b.GetBinContent(ibinx, ibiny))
+                for _ in range(n):
+                    median_binX.append(h1b.GetYaxis().GetBinCenter(ibiny))
+                    pass
+            if not median_binX:
+                continue
+            predMedian =  np.median(median_binX)
+            predIQR =  iqr(median_binX, rng=(16, 84)) / (2 * np.median(median_binX))
+            h1PredResponse.SetBinContent(ibinx, predMedian)
+            h1PredResolution.SetBinContent(ibinx, predIQR)
+            h1PredResponse.SetBinError(ibinx, 0)
+            h1PredResolution.SetBinError(ibinx, 0)
+
+
+        c.hist(h1CalcResponse, markercolor=ROOT.kViolet + 7, linecolor=ROOT.kViolet + 7, label="Calculated")
+        c.hist(h1PredResponse, markercolor=ROOT.kAzure + 7, linecolor=ROOT.kAzure + 7, label="Predicted")
+        c.logx()
+        c.legend()
+        c.xlabel("Truth Particle Energy [GeV]")
+        c.ylabel("Response Median")
+        c.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
+        c.save("./plots/{}/Median_Reponse.png".format(args.rangeE))
+
+        c1.hist(h1CalcResolution, markercolor=ROOT.kViolet + 7, linecolor=ROOT.kViolet + 7, label="Calculated")
+        c1.hist(h1PredResolution, markercolor=ROOT.kAzure + 7, linecolor=ROOT.kAzure + 7, label="Predicted")
+        c1.logx()
+        c1.legend()
+        c1.xlabel("Truth Particle Energy [GeV]")
+        c1.ylabel("Response IQR / (2 #times Median)")
+        c1.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
+        c1.save("./plots/{}/IQR_Reponse.png".format(args.rangeE))
+
+
+    if Linearity:
+
+        colors = [ROOT.kViolet + 7, ROOT.kAzure + 7, ROOT.kTeal, ROOT.kSpring - 2, ROOT.kOrange - 3, ROOT.kPink]
+
+        c = ap.canvas(batch=True, size=(600,600))
+        c.pads()[0]._bare().SetRightMargin(0.2)
+        c.pads()[0]._bare().SetLogz()
+        xaxis = np.linspace(-1,  3, 100 + 1, endpoint=True)
+        yaxis = np.linspace(0, 2,  100 + 1, endpoint=True)
+
+        h1a = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+        h1b = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+        PredOverTrueMedian = ROOT.TH1F('', '', len(xaxis) - 1, xaxis)
+        LCWOverTrueMedian  = ROOT.TH1F('', '', len(xaxis) - 1, xaxis)
+
+        PredOverTrueAvg    = ROOT.TH1F('', '', len(xaxis) - 1, xaxis)
+        LCWOverTrueAvg     = ROOT.TH1F('', '', len(xaxis) - 1, xaxis)
+
+        BinLogX(h1a)
+        BinLogX(h1b)
+        BinLogX(PredOverTrueMedian)
+        BinLogX(LCWOverTrueMedian)
+        BinLogX(PredOverTrueAvg)
+        BinLogX(LCWOverTrueAvg)
+
+        LCWEnergy  = df["clusterE"]
+        PredEnergy = df["cluster_ENG_TOT_frompred"]
+        TrueEnergy = df["cluster_ENG_CALIB_TOT"]
+
+        for iter in range(len(TrueEnergy)):
+            h1a.Fill(TrueEnergy[iter], PredEnergy[iter] / TrueEnergy[iter])
+            h1b.Fill(TrueEnergy[iter], LCWEnergy[iter] / TrueEnergy[iter])
+
+
+        for ibinx in range(1, h1a.GetNbinsX()+1):
+            median_binX = []
+            for ibiny in range(1, h1a.GetNbinsY()+1):
+                n = int(h1a.GetBinContent(ibinx, ibiny))
+                for _ in range(n):
+                    median_binX.append(h1a.GetYaxis().GetBinCenter(ibiny))
+                    pass
+            if not median_binX:
+                continue
+            #print(mode(mode_binX)[0].flatten())
+            predMedian =  np.median(median_binX)
+            predAvg    =  np.mean(median_binX)
+
+            PredOverTrueMedian.SetBinContent(ibinx, predMedian)
+            PredOverTrueAvg.SetBinContent(ibinx, predAvg)
+            PredOverTrueMedian.SetBinError(ibinx, 0)
+            PredOverTrueAvg.SetBinError(ibinx, 0)
+
+
+        for ibinx in range(1, h1b.GetNbinsX()+1):
+            median_binX = []
+            for ibiny in range(1, h1b.GetNbinsY()+1):
+                n = int(h1b.GetBinContent(ibinx, ibiny))
+                for _ in range(n):
+                    median_binX.append(h1b.GetYaxis().GetBinCenter(ibiny))
+                    pass
+            if not median_binX:
+                continue
+            calcMedian =  np.median(median_binX)
+            calcAvg    =  np.mean(median_binX)
+            LCWOverTrueMedian.SetBinContent(ibinx, calcMedian)
+            LCWOverTrueAvg.SetBinContent(ibinx, calcAvg)
+            LCWOverTrueMedian.SetBinError(ibinx, 0)
+            LCWOverTrueAvg.SetBinError(ibinx, 0)
+
+        c.hist(PredOverTrueMedian, markercolor=colors[0], linecolor=colors[0], label="Median E^{pred} / E^{true}")
+        c.hist(PredOverTrueAvg, markercolor=colors[1], linecolor=colors[1], label="Avg. E^{pred} / E^{true}")
+        c.hist(LCWOverTrueMedian, markercolor=colors[2], linecolor=colors[2], label="Median E^{LCW} / E^{true}")
+        c.hist(LCWOverTrueAvg, markercolor=colors[3], linecolor=colors[3], label="Avg. E^{LCW} / E^{true}")
+        c.logx()
+        c.legend()
+        c.xlabel("Truth Particle Energy [GeV]")
+        #c.ylabel("Response Median")
+        c.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
+        c.save("./plots/{}/Linearity.png".format(args.rangeE))
     return
 
 # Main function call.

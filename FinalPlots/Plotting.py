@@ -43,9 +43,14 @@ def BinLogY(h):
     pass
 
 def main():
+    ROOT.gStyle.SetPalette(ROOT.kBird)
 
     if args.rangeE == 'all':
-        df = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot.csv", sep=' ')
+        df = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_all.csv", sep=' ')
+        # df1 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_lowE.csv", sep=' ')
+        # df2 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_midE.csv", sep=' ')
+        # df3 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_highE.csv", sep=' ')
+        # df = pd.concat([df1, df2, df3], ignore_index=True)
     else:
         df = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_{}.csv".format(args.rangeE), sep=' ')
 
@@ -63,13 +68,13 @@ def main():
         print("Precise range in code and rerun")
         return
 
-    EnergyNoLogE         = False
-    EnergyLogE           = False
-    Energy2DPlot         = False
-    Reponse2DPlot        = False
-    Reponse1DPlot        = False
-    RatioVsInputFeatures = False
-    MedianIQR            = False ## Peter email Aug 23
+    EnergyNoLogE         = True
+    EnergyLogE           = True
+    Energy2DPlot         = True
+    Reponse2DPlot        = True
+    Reponse1DPlot        = True
+    RatioVsInputFeatures = True
+    MedianIQR            = True ## Peter email Aug 23
     Linearity            = True ## Peter email Aug 23
 
     # -- Plot cluster energy (truth, predicted, ) with no log scale for x axis
@@ -252,27 +257,40 @@ def main():
         c = ap.canvas(batch=True, size=(600,600))
         c.pads()[0]._bare().SetRightMargin(0.2)
         c.pads()[0]._bare().SetLogz()
+        c1 = ap.canvas(batch=True, size=(600,600))
+        c1.pads()[0]._bare().SetRightMargin(0.2)
+        c1.pads()[0]._bare().SetLogz()
         xaxis = np.linspace(0, 2,  100 + 1, endpoint=True)
         yaxis = np.linspace(0, 2,  100 + 1, endpoint=True)
 
         h1_backdrop = ROOT.TH2F('', "", 1, np.array([xaxis[0], xaxis[-1]]), 1, np.array([yaxis[0], 0.75* yaxis[-1] ])) # + 0.55 * (yaxis[-1] - yaxis[0])]))
         h1a = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
-        h1a = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+        h1b = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
 
         reCalc   = df['r_e_calculated']
         rePred   = df['r_e_predec']
         for iter in range(len(reCalc)):
             h1a.Fill(reCalc[iter] , rePred[iter])
+            h1b.Fill(reCalc[iter] , rePred[iter] / reCalc[iter])
 
         c.hist2d(h1_backdrop, option='AXIS')
         c.hist2d(h1a,         option='COLZ')
         c.hist2d(h1_backdrop, option='AXIS')
         line = c.line(0, 0, 2, 2, linecolor=ROOT.kRed, linewidth=2)
 
+        c1.hist2d(h1_backdrop, option='AXIS')
+        c1.hist2d(h1b,         option='COLZ')
+        c1.hist2d(h1_backdrop, option='AXIS')
+
         c.xlabel('Calculated response')
         c.ylabel('Predicted response')
         c.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
         c.save("./plots/{}/Response2Dplot.png".format(args.rangeE))
+
+        c1.xlabel('Calculated response')
+        c1.ylabel('Predicted response / Calculated response')
+        c1.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
+        c1.save("./plots/{}/Response2Dplot_Ratio.png".format(args.rangeE))
 
     if Reponse1DPlot:
         corr, _ = pearsonr(df["r_e_calculated"], df["r_e_predec"])
@@ -309,7 +327,8 @@ def main():
         # features = ['clusterE', 'cluster_ENG_CALIB_TOT', 'clusterEtaCalib', 'cluster_CENTER_LAMBDA', 'cluster_ENG_FRAC_EM', 'cluster_FIRST_ENG_DENS',
         #             'cluster_LATERAL', 'cluster_LONGITUDINAL', 'cluster_PTD', 'cluster_SECOND_TIME', 'cluster_SIGNIFICANCE',
         #             'nPrimVtx', 'avgMu']
-        features = ['clusterE', 'cluster_ENG_CALIB_TOT']
+        #features = ['clusterE', 'cluster_ENG_CALIB_TOT']
+        features = ['clusterPt',  'nPrimVtx']
 
         for idx, ifeature in enumerate(features):
             #if ifeature!='clusterE': continue
@@ -330,12 +349,13 @@ def main():
             if ifeature=='cluster_SIGNIFICANCE':   xaxis = np.linspace(0, 100, 100 + 1, endpoint=True)
             if ifeature=='nPrimVtx':               xaxis = np.linspace(0,  60, 100 + 1, endpoint=True)
             if ifeature=='avgMu':                  xaxis = np.linspace(10, 72, 100 + 1, endpoint=True)
+            if ifeature=='clusterPt':              xaxis = np.linspace(-1,  3, 100 + 1, endpoint=True)
 
             h1_backdrop = ROOT.TH2F('', "", 1, np.array([xaxis[0], xaxis[-1]]), 1, np.array([yaxis[0], 0.75* yaxis[-1] ])) # + 0.55 * (yaxis[-1] - yaxis[0])]))
             h1a = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
             h1prof = ROOT.TH1F('', '', len(xaxis) - 1, xaxis)
 
-            if ifeature=='clusterE' or ifeature=='cluster_ENG_CALIB_TOT' or ifeature=='cluster_CENTER_LAMBDA' or ifeature=='cluster_FIRST_ENG_DENS':
+            if ifeature=='clusterE' or ifeature=='clusterPt' or ifeature=='cluster_ENG_CALIB_TOT' or ifeature=='cluster_CENTER_LAMBDA' or ifeature=='cluster_FIRST_ENG_DENS':
                 BinLogX(h1_backdrop)
                 BinLogX(h1a)
                 BinLogX(h1prof)
@@ -364,7 +384,7 @@ def main():
 
 
 
-            if ifeature=='clusterE' or ifeature=='cluster_ENG_CALIB_TOT' or ifeature=='cluster_CENTER_LAMBDA' or ifeature=='cluster_FIRST_ENG_DENS':
+            if ifeature=='clusterE' or ifeature=='clusterPt' or ifeature=='cluster_ENG_CALIB_TOT' or ifeature=='cluster_CENTER_LAMBDA' or ifeature=='cluster_FIRST_ENG_DENS':
                 c.logx()
             c.hist2d(h1_backdrop, option='AXIS')
             c.hist2d(h1a,         option='COLZ')
@@ -384,6 +404,7 @@ def main():
             if ifeature=='cluster_SIGNIFICANCE':   xlabelname = r'\zeta^{EM}_{clus}'
             if ifeature=='nPrimVtx':               xlabelname = r'N_{PV}'
             if ifeature=='avgMu':                  xlabelname = r'\bigl\langle\mu\bigr\rangle'
+            if ifeature=='clusterPt':              xlabelname = r'p_{T, clus}'
 
             ylablename = r'\mathcal{R}^{pred} / \mathcal{R}^{calc}'
             c.xlabel(xlabelname)

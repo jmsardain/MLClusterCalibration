@@ -8,6 +8,6 @@ python traintest.py --test --path PathToModelDirectory
 python traintest.py --plot
 
 cd FinalPlots
-python -b final.py
+python -b Plotting.py
 
 ```

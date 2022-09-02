@@ -46,11 +46,11 @@ def main():
     ROOT.gStyle.SetPalette(ROOT.kBird)
 
     if args.rangeE == 'all':
-        df = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_all.csv", sep=' ')
-        # df1 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_lowE.csv", sep=' ')
-        # df2 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_midE.csv", sep=' ')
-        # df3 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_highE.csv", sep=' ')
-        # df = pd.concat([df1, df2, df3], ignore_index=True)
+        #df = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_all.csv", sep=' ')
+        df1 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_lowE.csv", sep=' ')
+        df2 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_midE.csv", sep=' ')
+        df3 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_highE.csv", sep=' ')
+        df = pd.concat([df1, df2, df3], ignore_index=True)
     else:
         df = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_{}.csv".format(args.rangeE), sep=' ')
 
@@ -71,9 +71,11 @@ def main():
     EnergyNoLogE         = True
     EnergyLogE           = True
     Energy2DPlot         = True
+    ClusE2DPlotE         = False
+    ClusE2DPlotR         = True
     Reponse2DPlot        = True
     Reponse1DPlot        = True
-    RatioVsInputFeatures = True
+    RatioVsInputFeatures = False
     MedianIQR            = True ## Peter email Aug 23
     Linearity            = True ## Peter email Aug 23
 
@@ -251,6 +253,70 @@ def main():
         c1.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
         c1.save("./plots/{}/Energy2Dplot_Truth_Calib.png".format(args.rangeE))
 
+
+    if ClusE2DPlotE:
+        c = ap.canvas(batch=True, size=(600,600))
+        c.pads()[0]._bare().SetRightMargin(0.2)
+        c.pads()[0]._bare().SetLogz()
+        xaxis = np.linspace(0, 5,  100 + 1, endpoint=True)
+        yaxis = np.linspace(0, 15,  100 + 1, endpoint=True)
+
+        h1_backdrop = ROOT.TH2F('', '', 1, np.array([xaxis[0], xaxis[-1]]), 1, np.array([yaxis[0], yaxis[-1] + 0.55 * (yaxis[-1] - yaxis[0])]))
+        h1a = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+
+        # BinLogX(h1_backdrop)
+        # BinLogX(h1a)
+        # BinLogY(h1_backdrop)
+        # BinLogY(h1a)
+
+
+        ClustE          = np.array(df["clusterE"])
+        truthClusTotalE = np.array(df["cluster_ENG_CALIB_TOT"])
+
+        for iter in range(len(ClustE)):
+             h1a.Fill(ClustE[iter], truthClusTotalE[iter])
+             #print("{} {}".format(ClustE[iter], truthClusTotalE[iter]))
+
+        #c.logx()
+        #c.log()
+        c.hist2d(h1_backdrop, option='AXIS')
+        c.hist2d(h1a,         option='COLZ')
+        c.hist2d(h1_backdrop, option='AXIS')
+
+        c.xlabel('Cluster E [GeV]')
+        c.ylabel('Truth cluster energy [GeV]')
+        c.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
+        c.save('./plots/{}/ClusterE_truth.png'.format(args.rangeE))
+
+    if ClusE2DPlotR:
+        c = ap.canvas(batch=True, size=(600,600))
+        c.pads()[0]._bare().SetRightMargin(0.2)
+        c.pads()[0]._bare().SetLogz()
+        xaxis = np.linspace(0, 10,  100 + 1, endpoint=True)
+        yaxis = np.linspace(0,  2, 100 + 1, endpoint=True)
+
+        h1_backdrop = ROOT.TH2F('', "", 1, np.array([xaxis[0], xaxis[-1]]), 1, np.array([yaxis[0], yaxis[-1] + 0.55 * (yaxis[-1] - yaxis[0])]))
+        h1a = ROOT.TH2F('', '', len(xaxis) - 1, xaxis, len(yaxis) - 1, yaxis)
+
+        # BinLogX(h1_backdrop)
+        # BinLogX(h1a)
+
+        ClustE          = np.array(df["clusterE"])
+        RespCalc        = np.array(df["r_e_calculated"])
+
+        for iter in range(len(ClustE)):
+             h1a.Fill(ClustE[iter], RespCalc[iter] )
+
+
+        #c.logx()
+        c.hist2d(h1_backdrop, option='AXIS')
+        c.hist2d(h1a,         option='COLZ')
+        c.hist2d(h1_backdrop, option='AXIS')
+
+        c.xlabel('Cluster E [GeV]')
+        c.ylabel('Response')
+        c.text(["#sqrt{s} = 13 TeV", ("%s" % (rangeEnergy) )], qualifier='Simulation Internal')
+        c.save("./plots/{}/ClusterE_response.png".format(args.rangeE))
 
 
     if Reponse2DPlot:

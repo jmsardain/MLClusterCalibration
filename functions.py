@@ -55,7 +55,7 @@ def train(filename):
 	dnn_model = build_and_compile_model(train_features)
 	dnn_model.summary()
 
-	history = dnn_model.fit( train_features, train_labels, validation_split=0.2, epochs=10, batch_size=2048) # batch_size=1024
+	history = dnn_model.fit( train_features, train_labels, validation_split=0.25, epochs=100, batch_size=1024) # batch_size=1024
 
 
 	test_results = dict()
@@ -63,12 +63,17 @@ def train(filename):
 	test_predictions = dnn_model.predict(test_features).flatten()
 	saveModel(dnn_model)
 
+	doImportance = False
+	if doImportance:
+		perm = PermutationImportance(dnn_model, random_state=1, scoring='neg_mean_absolute_percentage_error').fit(train_features,train_labels)
+		w = eli5.show_weights(perm, feature_names = list(train_features.columns.values))
+		resultImportance = pd.read_html(w.data)[0]
 
-	perm = PermutationImportance(dnn_model, random_state=1, scoring='neg_mean_absolute_percentage_error').fit(train_features,train_labels)
-	w = eli5.show_weights(perm, feature_names = list(train_features.columns.values))
-	resultImportance = pd.read_html(w.data)[0]
-	print(list(zip(list(train_features.columns.values), perm.feature_importances_)))
-	resultImportance.to_csv("featureImportance.csv", index=False)
+		featureImportance = np.array(list(zip(list(train_features.columns.values), perm.feature_importances_)), dtype=[('featureName', 'S100'), ('tot', float)])
+		featureImportance.sort(order='tot')
+
+		for i in featureImportance[::-1]:
+		    print("{}: {}".format(i[0], i[1]))
 
 	return history
 
@@ -89,7 +94,7 @@ def build_and_compile_model(X_train):
 									layers.Dense(256, activation='tanh'),
 									layers.Dense(1, activation='linear')])
 	#model.compile(loss=custom_loss_function, optimizer=tf.keras.optimizers.Adam(0.001))
-	model.compile(loss='mean_absolute_percentage_error', optimizer=tf.keras.optimizers.Adam(0.001), metrics=['mae'])
+	model.compile(loss='mean_absolute_percentage_error', optimizer=tf.keras.optimizers.Adam(0.0001), metrics=['mae'])
 	#model.compile(loss='mean_absolute_error', optimizer=tf.keras.optimizers.Adam(0.001))
 	#model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(0.001))
 	return model

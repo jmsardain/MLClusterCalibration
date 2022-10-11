@@ -84,6 +84,7 @@ def main():
     parser.add_argument('--plot', dest='plot', action='store_const', const=True, default=False, help='Save plots (default: False)')
     parser.add_argument('--cutoff', dest='cutoff', type=float, default=0.8, help='Train / Total dataset (default: 0.8)')
     parser.add_argument('--norm', dest='norm', action='store_const', const=True, default=False, help='Transform input features')
+    parser.add_argument('--nentries', dest='nentries', type=int, default=0, help='random selection of events from df')
     args = parser.parse_args()
 
     # -- Start
@@ -93,6 +94,8 @@ def main():
     # -- Select only Truth cluster energy > 0.3
     for variation in range(0, 4):
         df = tree.arrays(library="pd")
+        if args.nentries > 0:
+            df = df.sample(n = args.nentries)
         # variation 0: low energy
         # variation 1: mid energy
         # variation 2: high energy

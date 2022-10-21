@@ -6,6 +6,7 @@ import math
 import argparse
 from rootplotting import ap
 from rootplotting.tools import *
+from root_numpy import fill_hist
 
 parser = argparse.ArgumentParser(description='Final plotting code')
 parser.add_argument('--rangeE', dest='rangeE', required=True, type=str, default='', help='range in energy')
@@ -46,7 +47,7 @@ def main():
     ROOT.gStyle.SetPalette(ROOT.kBird)
 
     if args.rangeE == 'all':
-        #df = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_all.csv", sep=' ')
+        # df = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_all.csv", sep=' ')
         df1 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_lowE.csv", sep=' ')
         df2 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_midE.csv", sep=' ')
         df3 = pd.read_csv("/home/jmsardain/JetCalib/FinalPlots/plot_highE.csv", sep=' ')
@@ -71,11 +72,11 @@ def main():
     EnergyNoLogE         = True
     EnergyLogE           = True
     Energy2DPlot         = True
-    ClusE2DPlotE         = False
+    ClusE2DPlotE         = True
     ClusE2DPlotR         = True
     Reponse2DPlot        = True
     Reponse1DPlot        = True
-    RatioVsInputFeatures = False
+    RatioVsInputFeatures = True
     MedianIQR            = True ## Peter email Aug 23
     Linearity            = True ## Peter email Aug 23
 
@@ -168,19 +169,9 @@ def main():
         predClusTotalE  = np.array(df["cluster_ENG_TOT_frompred"])
         calibClusTotalE = np.array(df["clusterECalib"])
 
-        for iter in range(len(truthClusTotalE)):
-            htruthClusTotalE.Fill(truthClusTotalE[iter])
-            hpredClusTotalE.Fill(predClusTotalE[iter])
-            hcalibClusTotalE.Fill(calibClusTotalE[iter])
-            htruthpred.Fill(truthClusTotalE[iter]  / predClusTotalE[iter])
-            htruthcalib.Fill(truthClusTotalE[iter] / calibClusTotalE[iter])
-        # -- Define histograms
-        c.hist(h1_backdrop, option='AXIS')
-        c.hist(htruthClusTotalE,  option='HIST', label='Truth total E',      linecolor=2)
-        c.hist(hpredClusTotalE,   option='HIST',  label='Predicted total E',   linecolor=4)
-        c.hist(hcalibClusTotalE,  option='HIST', label='Calibrated total E', linecolor=8)
-        c.hist(h1_backdrop, option='AXIS')
-
+        htruthClusTotalE = c.hist(truthClusTotalE, bins=xaxis, option='HIST', label='Truth total E', linecolor=2)
+        hpredClusTotalE  = c.hist(predClusTotalE, bins=xaxis, option='HIST', label='Predicted total E', linecolor=4)
+        hcalibClusTotalE = c.hist(calibClusTotalE, bins=xaxis, option='HIST', label='Calibrated total E', linecolor=8)
 
 
         p1.ylim(0., 2.)
@@ -224,14 +215,16 @@ def main():
         predClusTotalE  = np.array(df["cluster_ENG_TOT_frompred"])
         calibClusTotalE = np.array(df["clusterECalib"])
 
+        mesh1a = np.vstack((truthClusTotalE, predClusTotalE)).T
+        mesh1b = np.vstack((truthClusTotalE, calibClusTotalE)).T
 
-        for iter in range(len(truthClusTotalE)):
-            h1a.Fill(truthClusTotalE[iter] , predClusTotalE[iter])
-            h1b.Fill(truthClusTotalE[iter] , calibClusTotalE[iter])
+        fill_hist(h1a, mesh1a)
+        fill_hist(h1b, mesh1b)
 
         c.hist2d(h1_backdrop, option='AXIS')
         c.hist2d(h1a,         option='COLZ')
         c.hist2d(h1_backdrop, option='AXIS')
+        # c.ylim(-1, 3)
         line = c.line(1e-1, 1e-1, 1e3, 1e3, linecolor=ROOT.kRed, linewidth=2)
         c.logx()
         c.log()
@@ -245,6 +238,7 @@ def main():
         c1.hist2d(h1_backdrop, option='AXIS')
         c1.hist2d(h1b,         option='COLZ')
         c1.hist2d(h1_backdrop, option='AXIS')
+        # c1.ylim(-1, 3)
         line = c1.line(1e-1, 1e-1, 1e3, 1e3, linecolor=ROOT.kRed, linewidth=2)
         c1.logx()
         c1.log()
@@ -273,9 +267,8 @@ def main():
         ClustE          = np.array(df["clusterE"])
         truthClusTotalE = np.array(df["cluster_ENG_CALIB_TOT"])
 
-        for iter in range(len(ClustE)):
-             h1a.Fill(ClustE[iter], truthClusTotalE[iter])
-             #print("{} {}".format(ClustE[iter], truthClusTotalE[iter]))
+        mesh1a = np.vstack((ClustE, truthClusTotalE)).T
+        fill_hist(h1a, mesh1a)
 
         #c.logx()
         #c.log()
@@ -304,9 +297,8 @@ def main():
         ClustE          = np.array(df["clusterE"])
         RespCalc        = np.array(df["r_e_calculated"])
 
-        for iter in range(len(ClustE)):
-             h1a.Fill(ClustE[iter], RespCalc[iter] )
-
+        mesh1a = np.vstack((ClustE, RespCalc)).T
+        fill_hist(h1a, mesh1a)
 
         #c.logx()
         c.hist2d(h1_backdrop, option='AXIS')
@@ -335,9 +327,11 @@ def main():
 
         reCalc   = df['r_e_calculated']
         rePred   = df['r_e_predec']
-        for iter in range(len(reCalc)):
-            h1a.Fill(reCalc[iter] , rePred[iter])
-            h1b.Fill(reCalc[iter] , rePred[iter] / reCalc[iter])
+
+        mesh1a = np.vstack((reCalc, rePred)).T
+        mesh1b = np.vstack((reCalc, np.divide(rePred, reCalc, dtype=float))).T
+        fill_hist(h1a, mesh1a)
+        fill_hist(h1b, mesh1b)
 
         c.hist2d(h1_backdrop, option='AXIS')
         c.hist2d(h1a,         option='COLZ')
@@ -394,10 +388,10 @@ def main():
         #             'cluster_LATERAL', 'cluster_LONGITUDINAL', 'cluster_PTD', 'cluster_SECOND_TIME', 'cluster_SIGNIFICANCE',
         #             'nPrimVtx', 'avgMu']
         #features = ['clusterE', 'cluster_ENG_CALIB_TOT']
-        features = ['clusterPt',  'nPrimVtx']
+        features = ['clusterE']
 
         for idx, ifeature in enumerate(features):
-            #if ifeature!='clusterE': continue
+            # if ifeature!='clusterE': continue
             c = ap.canvas(batch=True, size=(600,600))
             c.pads()[0]._bare().SetRightMargin(0.2)
             c.pads()[0]._bare().SetLogz()
@@ -431,8 +425,8 @@ def main():
             reCalc   = df["r_e_calculated"]
             rePred   = df["r_e_predec"]
 
-            for iter in range(len(reCalc)):
-                h1a.Fill(clusterE[iter], reCalc[iter] / rePred[iter] )
+            mesh1a = np.vstack((clusterE, np.divide(reCalc, rePred, dtype=float))).T
+            fill_hist(h1a, mesh1a)
 
 
             for ibinx in range(1, h1a.GetNbinsX()+1):
@@ -516,14 +510,15 @@ def main():
         BinLogX(h1PredResolution)
 
 
+        mesh1a = np.vstack((trueEnergy, reCalc)).T
+        mesh1b = np.vstack((trueEnergy, rePred)).T
+        mesh2a = np.vstack((trueEnergy, reCalc)).T
+        mesh2b = np.vstack((trueEnergy, rePred)).T
 
-
-        for iter in range(len(reCalc)):
-            h1a.Fill(trueEnergy[iter], reCalc[iter])
-            h1b.Fill(trueEnergy[iter], rePred[iter])
-            h2a.Fill(trueEnergy[iter], reCalc[iter])
-            h2b.Fill(trueEnergy[iter], rePred[iter])
-
+        fill_hist(h1a, mesh1a)
+        fill_hist(h1b, mesh1b)
+        fill_hist(h2a, mesh2a)
+        fill_hist(h2b, mesh2b)
 
         for ibinx in range(1, h1a.GetNbinsX()+1):
             median_binX = []
@@ -608,10 +603,11 @@ def main():
         PredEnergy = df["cluster_ENG_TOT_frompred"]
         TrueEnergy = df["cluster_ENG_CALIB_TOT"]
 
-        for iter in range(len(TrueEnergy)):
-            h1a.Fill(TrueEnergy[iter], PredEnergy[iter] / TrueEnergy[iter])
-            h1b.Fill(TrueEnergy[iter], LCWEnergy[iter] / TrueEnergy[iter])
+        mesh1a = np.vstack((TrueEnergy, np.divide(PredEnergy, TrueEnergy, dtype=float))).T
+        mesh1b = np.vstack((TrueEnergy, np.divide(LCWEnergy, TrueEnergy, dtype=float))).T
 
+        fill_hist(h1a, mesh1a)
+        fill_hist(h1b, mesh1b)
 
         for ibinx in range(1, h1a.GetNbinsX()+1):
             median_binX = []

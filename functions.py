@@ -21,7 +21,9 @@ from eli5.sklearn import PermutationImportance
 
 def getData(filename):
 	res = pd.read_csv(filename)
-	df = res.drop(columns=['cluster_ENG_CALIB_TOT', 'clusterECalib'])
+	df = res.drop(columns=['cluster_ENG_CALIB_TOT', 'clusterECalib_old','clusterECalib_new' ])
+	print(df.columns)
+	print(len(df.index))
 	for icol in df.columns:
 		if icol== "r_e_calculated":
 			continue
@@ -29,8 +31,8 @@ def getData(filename):
 		if icol == "clusterE" or icol == "cluster_FIRST_ENG_DENS":
 			arr = np.log(arr)
 		brr = [[i] for i in arr]
-		#quantile = QuantileTransformer(random_state=0, output_distribution='normal')
-		quantile = StandardScaler()
+		quantile = QuantileTransformer(random_state=0, output_distribution='normal')
+		# quantile = StandardScaler()
 		data_trans = quantile.fit_transform(brr)
 		newcol = data_trans.flatten()
 		df[icol] = newcol
@@ -38,7 +40,7 @@ def getData(filename):
 	return df
 
 
-def train(filename):
+def train(filename, rangeE):
 	dataset = getData(filename)
 	train_dataset = dataset.sample(frac=0.8, random_state=0)
 	test_dataset = dataset.drop(train_dataset.index)
@@ -55,13 +57,13 @@ def train(filename):
 	dnn_model = build_and_compile_model(train_features)
 	dnn_model.summary()
 
-	history = dnn_model.fit( train_features, train_labels, validation_split=0.25, epochs=100, batch_size=1024) # batch_size=1024
+	history = dnn_model.fit( train_features, train_labels, validation_split=0.2, epochs=100,  batch_size=2048) # batch_size=1024
 
 
 	test_results = dict()
 	test_results['dnn_model'] = dnn_model.evaluate(test_features, test_labels, verbose=0)
 	test_predictions = dnn_model.predict(test_features).flatten()
-	saveModel(dnn_model)
+	saveModel(dnn_model, rangeE)
 
 	doImportance = False
 	if doImportance:
@@ -81,29 +83,42 @@ def train(filename):
 
 def custom_loss_function(y_true, y_pred):
 	medianloss = tfp.stats.percentile(tf.math.abs(y_true - y_pred), q=50.)
-	#return tf.reduce_mean(medianloss)
+	# return tf.reduce_mean(medianloss)
 	return medianloss
 
-#def build_and_compile_model(norm, X_train):
+def lgk_loss_function(y_true, y_pred): ## https://arxiv.org/pdf/1910.03773.pdf
+	# alpha = 0.001
+	# bandwith = 0.5
+	alpha = tf.constant(0.1)
+	bandwith = tf.constant(0.5)
+	pi = tf.constant(math.pi)
+	## LGK (h and alpha are hyperparameters)
+	norm = -1/(bandwith*tf.math.sqrt(2*pi))
+	gaussian_kernel  = norm * tf.math.exp( -(y_true - y_pred)**2 / (2*(bandwith**2)))
+	leakiness = alpha*tf.math.abs(y_true - y_pred)
+	lgk_loss = gaussian_kernel + leakiness
+	return lgk_loss
+
 def build_and_compile_model(X_train):
-	#model = keras.Sequential([norm, layers.Dense(64, activation='relu'), layers.Dense(64, activation='relu'), layers.Dense(1)])
+	# model = keras.Sequential([norm, layers.Dense(64, activation='relu'), layers.Dense(64, activation='relu'), layers.Dense(1)])
 	model = keras.Sequential([layers.Flatten(input_shape=(X_train.shape[1],)),
-									layers.Dense(64, activation='tanh'),
-									layers.Dense(64, activation='tanh'),
+									layers.Dense(64,  activation='tanh'),
+									layers.Dense(64,  activation='tanh'),
 									layers.Dense(128, activation='tanh'),
 									layers.Dense(256, activation='tanh'),
-									layers.Dense(1, activation='linear')])
-	#model.compile(loss=custom_loss_function, optimizer=tf.keras.optimizers.Adam(0.001))
-	model.compile(loss='mean_absolute_percentage_error', optimizer=tf.keras.optimizers.Adam(0.0001), metrics=['mae'])
+									layers.Dense(1,   activation='linear')])
+	model.compile(loss=lgk_loss_function, optimizer=tf.keras.optimizers.Adam(0.001))
+	# model.compile(loss='mean_absolute_percentage_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.00001, clipnorm=1.0), metrics=['mae'])
+	# model.compile(loss='mean_absolute_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.000001, clipnorm=1.0), metrics=['mae'])
 	#model.compile(loss='mean_absolute_error', optimizer=tf.keras.optimizers.Adam(0.001))
 	#model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(0.001))
 	return model
 
 
-def saveModel(model):
+def saveModel(model, rangeE):
 
 	Date = datetime.datetime.now().strftime('%m-%d-%Y')
-	path = os.getcwd()+'/TrainedModels/'+Date+'/'
+	path = os.getcwd()+'/TrainedModels/'+rangeE+'/'
 	try:
 		os.mkdir(path)
 	except:

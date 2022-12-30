@@ -39,17 +39,30 @@ def main():
 	## path to train: /home/jmsardain/JetCalib/train.csv
 	## path to test: /home/jmsardain/JetCalib/test.csv
 
-	pathToCSVFile = "/home/jmsardain/JetCalib/"
+	pathToCSVFile = "/home/opitcl/calo-jad/MLClusterCalibration/"
 	# -- Train using train dataset
 	if args.train:
 		filename = pathToCSVFile+"train_{}.csv".format(args.rangeE)
-		history = train(filename)
-		utils.plot_loss(history)
-		utils.plot_metrics(history)
+		
+		# epochs = [5, 25, 100, 200]
+		epoch = 100
+		batch_size = 1024
+		tests = ['tanh']
+		itera = 1
+		
+		file = open("hyperparameters.txt", "a")
+		for activation in tests:
+			# to_write = "4 hidden layers, " + str(epoch) + "epochs, " + str(batch_size) + "batch size, " + str(activation) + "activation"
+			# file.write(to_write)
+			history = train(filename, epoch, batch_size, activation, itera)
+			utils.plot_loss(history)
+			# utils.plot_metrics(history, file, itera, epoch,  batch_size, activation)
+		file.close()
 
 	# -- Get prediction on test dataset
 	if args.test:
 		filename = pathToCSVFile+"test_{}.csv".format(args.rangeE)
+		activation = 'tanh'
 		r_e_calc, test_predictions = test(filename, args.path, args.rangeE)
 		utils.plotRealVsPredict(r_e_calc, test_predictions)
 		utils.plotRealPredict(r_e_calc, test_predictions)
@@ -62,7 +75,7 @@ def main():
 		filetest = pathToCSVFile+"test_{}.csv".format(args.rangeE)
 		fileres  = pathToCSVFile+"results_{}.csv".format(args.rangeE)
 		df_plot = utils.finalplot(filetest, fileres)
-		df_plot.to_csv("/home/jmsardain/JetCalib/FinalPlots/plot_{}.csv".format(args.rangeE), sep=' ', index=False)
+		df_plot.to_csv("/home/opitcl/calo-jad/MLClusterCalibration/FinalPlots/plot_{}.csv".format(args.rangeE), sep=' ', index=False)
 
 	return
 

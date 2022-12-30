@@ -85,35 +85,46 @@ def main():
     parser.add_argument('--cutoff', dest='cutoff', type=float, default=0.8, help='Train / Total dataset (default: 0.8)')
     parser.add_argument('--norm', dest='norm', action='store_const', const=True, default=False, help='Transform input features')
     parser.add_argument('--nentries', dest='nentries', type=int, default=0, help='random selection of events from df')
+    parser.add_argument('--timing-on', dest='timing_on', action='store_const', const=True, default=False, help='Select to use only cluster timin < 25 ns')
     args = parser.parse_args()
 
     # -- Start
-    filename="data/JZ.topo-cluster.root"
+#    filename="data/JZ.topo-cluster.root"
+    filename="/data1/atlng02/loch/Summer2022/MLTopoCluster/data/Akt4EMTopo.topo_cluster.root"
     file = ur.open(filename)
+    print("This is running...\n\n")
     tree = file["ClusterTree"]
     # -- Select only Truth cluster energy > 0.3
     for variation in range(0, 4):
         df = tree.arrays(library="pd")
         if args.nentries > 0:
             df = df.sample(n = args.nentries)
+	
         # variation 0: low energy
         # variation 1: mid energy
         # variation 2: high energy
+        if args.timing_on:
+            print("Selectiong for abs(cluster_time) < 12.5")
+            df = df[(df["cluster_time"].abs() < 12.5)]
         if   variation == 0:
-            #df = df[(df["cluster_ENG_CALIB_TOT"] > 0.3) & (df["cluster_ENG_CALIB_TOT"] < 1)]
-            df = df[(df["clusterE"] > 0.3) & (df["clusterE"] < 1)]
+            print("Selecting low E...")
+            df = df[(df["cluster_ENG_CALIB_TOT"] > 0.3) & (df["cluster_ENG_CALIB_TOT"] < 1)]
+            # df = df[(df["clusterE"] > 0.3) & (df["clusterE"] < 1)]
             rangeE = "lowE"
         elif variation == 1:
-            #df = df[(df["cluster_ENG_CALIB_TOT"] >= 1) & (df["cluster_ENG_CALIB_TOT"] < 5)]
-            df = df[(df["clusterE"] >= 1) & (df["clusterE"] < 5)]
+            print("Selecting mid E...")
+            df = df[(df["cluster_ENG_CALIB_TOT"] >= 1) & (df["cluster_ENG_CALIB_TOT"] < 5)]
+            # df = df[(df["clusterE"] >= 1) & (df["clusterE"] < 5)]
             rangeE = "midE"
         elif variation == 2:
-            #df = df[df["cluster_ENG_CALIB_TOT"] >= 5]
-            df = df[df["clusterE"] >= 5]
+            print("Selecting high E...")
+            df = df[df["cluster_ENG_CALIB_TOT"] >= 5]
+            # df = df[df["clusterE"] >= 5]
             rangeE = "highE"
         elif variation == 3:
-            #df = df[df["cluster_ENG_CALIB_TOT"] >= 0.3]
-            df = df[df["clusterE"] >= 0.3]
+            print("Selecting all E...")
+            df = df[df["cluster_ENG_CALIB_TOT"] >= 0.3]
+            # df = df[df["clusterE"] >= 0.3]
             rangeE = "all"
         else:
             print("Not defined")
@@ -124,6 +135,14 @@ def main():
         # -- Add response
         resp = np.array( df.clusterE.values ) /  np.array( df.cluster_ENG_CALIB_TOT.values )
         df["r_e_calculated"] = resp
+
+        # -- change clusterECalib to clusterECalib_old
+        vals = df.pop('clusterECalib')
+        df["clusterECalib_old"] = vals
+
+        # -- add in recalculated clusterECalib (clusterECalib new)
+        vals = np.array( df.cluster_HAD_WEIGHT.values ) * np.array( df.clusterE.values )
+        df["clusterECalib_new"] = vals
 
         # -- Define train and test (train is 0.8 of whole root file, test is the rest)
         train, test = splitDataframe(df, cutoff=args.cutoff)
@@ -148,7 +167,7 @@ def main():
                         'cluster_N_BAD_CELLS', 'cluster_BAD_CELLS_CORR_E',
                         'cluster_LONGITUDINAL', 'cluster_LATERAL', 'cluster_SIGNIFICANCE',
                         'nCluster', 'cluster_N_BAD_HV_CELLS', 'cluster_nCells', 'cluster_nCells_tot',
-                        'cluster_ENG_CALIB_TOT', 'clusterECalib',
+                        'cluster_ENG_CALIB_TOT', 'clusterECalib_old', 'clusterECalib_new'
                         ]
 
         # column_names = ['clusterE', 'clusterPt', 'clusterPhi', 'cluster_SECOND_R',
@@ -185,8 +204,10 @@ def main():
         df_test  = test[column_names]
 
         # -- Sanity cuts (if not done, this variable gives inf when logged)
-        df_train = df_train[(df_train["cluster_FIRST_ENG_DENS"] != 0) & (df_train["cluster_ENG_CALIB_TOT"] >= 0.3)]
-        df_test  = df_test[(df_test["cluster_FIRST_ENG_DENS"] != 0)   & (df_test["cluster_ENG_CALIB_TOT"]  >= 0.3) ]
+        df_train = df_train[(df_train["cluster_FIRST_ENG_DENS"] > 0)]
+        df_test  = df_test[(df_test["cluster_FIRST_ENG_DENS"] > 0)]
+        df_train = df_train[(df_train["clusterE"] > 0)]
+        df_test  = df_test[(df_test["clusterE"] > 0)]
 
         print("I am here again")
         # -- Get min and max and transform dataframes (not sure if we have to do it for each dataframe or for the original dataframe)

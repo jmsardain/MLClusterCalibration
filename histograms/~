@@ -1,0 +1,188 @@
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import uproot as ur
+
+'''
+Receives 5 lists and list of filenames per input
+
+Creates histogram of input values
+'''
+def plot(values_in, values_out, filenames):
+	# create 4, one for each file
+	fig, ax = plt.subplots(2,2)
+	for i in range(4):
+		maximum_in = np.max(values_in[i+1])
+		minimum_in = np.min(values_in[i+1])
+		maximum_out = np.max(values_out[i+1])
+		minimum_out = np.min(values_out[i+1])
+		
+		bins = np.linspace(minimum_in, maximum_in, 101, endpoint=True)
+		bins_out = np.linspace(minimum_out, maximum_out, 101, endpoint=True)
+		
+		row = 0
+		col = 0
+		if i == 1:
+			col = 1
+		elif i == 2:
+			row = 1
+		elif i == 3:
+			row = 1
+			col = 1
+
+		ax[row, col].hist(values_in[i+1], bins=bins, histtype=u'step', color='b')
+		ax[row, col].hist(values_out[i+1], bins=bins_out, histtype=u'step', color='g')
+		ax[row, col].set_xlabel(filenames[i])
+		ax[row, col].set_ylabel('Count')
+
+	fig.tight_layout()
+	plt.text(75, 10, r'$-- linear', color='b')
+	plt.text(75, 20, r'$-- ETrue < 0.1GeV', color='g')
+	plt.savefig(values[0] + ".png")
+	plt.clf()
+	
+'''
+Each element in the list will look like this by the end:
+['cluster_ENG_CALIB_TOT', array([1.8745068e-01, 2.4229003e-02, 5.7890780e-03, ..., 5.4504395e-05,
+       5.1734350e-04, 2.2101013e-02]), array([2.8097640e-01, 1.5818007e-01, 9.2299200e-03, ..., 7.2164537e-04,
+       7.1507770e-02, 5.4504395e-05]), array([0.0329346...]) ]
+elem 0 - input name
+elem 1 - input values
+'''
+def makeList(path, filenames):	
+	# Load all info from CSV files
+	# 2d list, first level for each input, second for each file with given input
+	# first element in each subarray will have name of input
+	# should end up with 4 subarrays, one for each file
+	# data_in = []
+	# data_out = []
+	data = []
+	
+	# This is in case each file has a different order of inputs
+	old_input = []
+
+	for filename in filenames:
+		print("Reading file", filename)
+		file = open(path + filename)
+		
+		# One histogram per input per test
+		inputs = file.readline().strip().split(" ")
+
+		values = []
+		
+		# make values 2d list of decimal values instead of list of strings
+		for line in file:
+			float_values = []
+			line = line.strip().split(" ")
+			for j in range(len(line)):
+				float_values.append(float(line[j]))
+			values.append(float_values)
+		
+		values = np.array(values)
+		'''
+		# Sift values for linearization vs extranneous data
+		values_in, values_out = sift(inputs, values)
+		
+		if len(values_in) == 0 or len(values_out) == 0:
+			print("No values found for " + filename)
+			continue
+		'''
+
+		# Place input values as the first element in each interior list
+		if not old_input: 	
+			for i in range(len(inputs)):
+				# Place input name in array
+				input_array = [inputs[i]]
+				# data_in.append(input_array)
+				# data_out.append(input_array)
+				data.append(input_array)
+			
+		# Place input values from linearized and outlying data
+		for i in range(len(inputs)):
+			# data_in[i].append(values_in[:, i])
+			# data_out[i].append(values_out[:, i])
+			data[i].append(values[:,1])
+		
+		old_input = inputs
+	# return data_in, data_out
+	return data
+
+'''
+Sift through the 2D list for two sets of results:
+	- one where the clus_ENG_CALIB_TOT vs. clusterECalib is linearized
+	- one where these relations have truth energy < 0.1 GeV
+
+Produce two csv files with these selections for lowE, midE, highE, and all.
+
+Plot the histograms for the input value spread from each selection of each energy range.
+'''
+def sift(inputs, file_info):
+	difference_range	= 0.2 # Choose all values +/- 0.2 from the line
+	clus_ENG_CALIB_TOT	= 0
+	clusterECalib		= 0
+
+	for i in range(len(inputs)):
+		if inputs[i] == "cluster_ENG_CALIB_TOT":
+			clus_ENG_CALIB_TOT = i
+		if inputs[i] == "clusterECalib":
+			clusterECalib = i
+
+
+	# Sift through the data and only add it back if it meets the requirements
+	linearized	= []
+	outliers	= []
+	for info in file_info:
+		if abs(info[clusterECalib] - info[clus_ENG_CALIB_TOT]) < difference_range:
+			linearized.append(info)
+		if info[clus_ENG_CALIB_TOT] < 0.1:
+			outliers.append(info)
+	# print(linearized)
+	# print()
+	# print()
+	# print(outliers)
+	linearized = np.array(linearized)
+	outliers = np.array(outliers)
+	return linearized, outliers
+	
+def sift_files(path, filenames):
+	for filename in filenames:
+	 	df = pd.read_csv(path + filename)
+		linear = True
+		outlier = False
+		if linear:
+			df = df[(df["cluster_ENG_CALIB_TOT"] - df["clusterECalib"]).abs() < 0.2]
+		if outlier:
+			df = df[(df["cluster_ENG_CALIB_TOT"] < 0.1)]
+		column_names = ['r_e_calculated',
+				'nPrimVtx', 'avgMu',
+				'clusterE', 'clusterPt', 'clusterPhi', 'cluster_MASS', 'cluster_sumCellE',
+				'cluster_time', 'cluster_fracE', 'cluster_PTD', 'cluster_ISOLATION',
+				'cluster_FIRST_ETA', 'cluster_FIRST_PHI', 'cluster_FIRST_ENG_DENS',
+				'cluster_SECOND_TIME', 'cluster_SECOND_R', 'cluster_SECOND_LAMBDA', 'cluster_SECOND_ENG_DENS',
+				'cluster_CENTER_LAMBDA', 'cluster_CENTER_MAG', 'cluster_CENTER_X', 'cluster_CENTER_Y', 'cluster_CENTER_Z',
+				'cluster_ENG_BAD_CELLS', 'cluster_ENG_BAD_HV_CELLS', 'cluster_ENG_FRAC_EM', 'cluster_ENG_FRAC_MAX', 'cluster_ENG_FRAC_CORE', 'cluster_ENG_POS',
+				'cluster_DELTA_THETA', 'cluster_DELTA_PHI',
+				'cluster_CELL_SIGNIFICANCE', 'cluster_CELL_SIG_SAMPLING',
+				'cluster_N_BAD_CELLS', 'cluster_BAD_CELLS_CORR_E',
+				'cluster_LONGITUDINAL', 'cluster_LATERAL', 'cluster_SIGNIFICANCE',
+				'nCluster', 'cluster_N_BAD_HV_CELLS', 'cluster_nCells', 'cluster_nCells_tot',
+				'cluster_ENG_CALIB_TOT', 'clusterECalib',
+				]
+		df.to_csv(filename, index=False)
+
+
+def  main():
+	path = "/home/opitcl/calib/histograms/low-timing-results/"
+	filenames = ["plot_all.csv", "plot_lowE.csv", "plot_midE.csv", "plot_highE.csv"]
+	# info_in, info_out = makeList(path, filenames)
+	sift_files(path, filenames)
+	info = makeList(path, filename)
+	
+	print("Creating histograms...")	
+	for i in range(len(info)):
+		for j in range(len(info[i])):
+			plot(info[i][j], filenames)
+		
+			
+main()

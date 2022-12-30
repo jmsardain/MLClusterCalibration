@@ -64,20 +64,28 @@ def plot_loss(history):
     ax.plot(history.history['loss'], label='loss')
     ax.plot(history.history['val_loss'], label='val_loss')
     ax.set_xlabel('Epoch')
+    ax.set_ylabel('Response Loss')
     plt.legend()
     plt.grid(True)
     plt.savefig("Losses.png")
     plt.clf()
 
 
-def plot_metrics(history):
+def plot_metrics(history, file, itera, batch, epo, act):
     fig, ax = plt.subplots()
     ax.plot(history.history['mae'], label='mae')
     ax.plot(history.history['val_mae'], label='val_mae')
     #plt.ylim([0, 2])
+    mae = 0
+    mae_list = history.history['mae']
+    for elem in mae_list:
+        mae += elem
+    # file.write("largest, average, smallest mae:", max(mae_list), mae/len(mae_list), min(mae_list))
     ax.set_xlabel('Epoch')
+    ax.set_ylabel('Response Mean Absolute Error')
     plt.legend()
     plt.grid(True)
+    # ax.setTitle("4 hidden layers,", epo, "epochs,", batch, "batch size,", act, "activation")
     plt.savefig("MAE.png")
     plt.clf()
 
@@ -124,7 +132,7 @@ def finalplot(testName, resultName):
     #         return
 
     # -- Create new dataframe that will be used for final plots
-    columnsname = col + ['r_e_predec', 'cluster_ENG_CALIB_TOT', 'cluster_ENG_TOT_frompred', 'clusterECalib']
+    columnsname = col + ['r_e_predec', 'cluster_ENG_CALIB_TOT', 'cluster_ENG_TOT_frompred', 'clusterECalib_old', 'clusterECalib_new']
     df_plot = pd.DataFrame(columns=columnsname)
 
     for icolumn in columnsname:

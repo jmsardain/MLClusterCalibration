@@ -21,26 +21,23 @@ from eli5.sklearn import PermutationImportance
 
 def getData(filename):
 	res = pd.read_csv(filename)
-	df = res.drop(columns=['cluster_ENG_CALIB_TOT', 'clusterECalib_old','clusterECalib_new' ])
-	print(df.columns)
-	print(len(df.index))
+	df = res.drop(columns=['cluster_ENG_CALIB_TOT', 'clusterECalib_new', 'clusterECalib_old'])
 	for icol in df.columns:
 		if icol== "r_e_calculated":
 			continue
 		arr = np.array(df[icol].values)
 		if icol == "clusterE" or icol == "cluster_FIRST_ENG_DENS":
-			arr = np.log(arr)
+		 	arr = np.log(arr)
 		brr = [[i] for i in arr]
 		quantile = QuantileTransformer(random_state=0, output_distribution='normal')
 		# quantile = StandardScaler()
 		data_trans = quantile.fit_transform(brr)
 		newcol = data_trans.flatten()
 		df[icol] = newcol
-
 	return df
 
 
-def train(filename, rangeE):
+def train(filename, epochs, batch_size, activation, i):
 	dataset = getData(filename)
 	train_dataset = dataset.sample(frac=0.8, random_state=0)
 	test_dataset = dataset.drop(train_dataset.index)
@@ -53,17 +50,22 @@ def train(filename, rangeE):
 	train_labels = train_features.pop('r_e_calculated')
 	test_labels = test_features.pop('r_e_calculated')
 
+	# Do not train on old, new clusterECalib
+	# train_features.pop('clusterECalib_new')
+	# train_features.pop('clusterECalib_old')
 
-	dnn_model = build_and_compile_model(train_features)
+	print("input features: {}".format(train_features.columns))
+	print("target features: {}".format(train_labels.name))
+	dnn_model = build_and_compile_model(train_features, activation)
 	dnn_model.summary()
+	
 
-	history = dnn_model.fit( train_features, train_labels, validation_split=0.2, epochs=100,  batch_size=2048) # batch_size=1024
-
+	history = dnn_model.fit( train_features, train_labels, validation_split=0.20, epochs=epochs, batch_size=batch_size) # old batch_size=1024, 100 epochs
 
 	test_results = dict()
 	test_results['dnn_model'] = dnn_model.evaluate(test_features, test_labels, verbose=0)
 	test_predictions = dnn_model.predict(test_features).flatten()
-	saveModel(dnn_model, rangeE)
+	saveModel(dnn_model, i)
 
 	doImportance = False
 	if doImportance:
@@ -83,14 +85,15 @@ def train(filename, rangeE):
 
 def custom_loss_function(y_true, y_pred):
 	medianloss = tfp.stats.percentile(tf.math.abs(y_true - y_pred), q=50.)
-	# return tf.reduce_mean(medianloss)
+	#return tf.reduce_mean(medianloss)
 	return medianloss
 
-def lgk_loss_function(y_true, y_pred): ## https://arxiv.org/pdf/1910.03773.pdf
+
+def lgk_loss_function(y_true, y_pred):
 	# alpha = 0.001
 	# bandwith = 0.5
-	alpha = tf.constant(0.1)
-	bandwith = tf.constant(0.5)
+	alpha = tf.constant(0.05)
+	bandwith = tf.constant(0.04)
 	pi = tf.constant(math.pi)
 	## LGK (h and alpha are hyperparameters)
 	norm = -1/(bandwith*tf.math.sqrt(2*pi))
@@ -99,26 +102,28 @@ def lgk_loss_function(y_true, y_pred): ## https://arxiv.org/pdf/1910.03773.pdf
 	lgk_loss = gaussian_kernel + leakiness
 	return lgk_loss
 
-def build_and_compile_model(X_train):
-	# model = keras.Sequential([norm, layers.Dense(64, activation='relu'), layers.Dense(64, activation='relu'), layers.Dense(1)])
+def build_and_compile_model(X_train, activation):
+	#model = keras.Sequential([norm, layers.Dense(64, activation='relu'), layers.Dense(64, activation='relu'), layers.Dense(1)])
+	# Original: four layers, tanh activation
 	model = keras.Sequential([layers.Flatten(input_shape=(X_train.shape[1],)),
-									layers.Dense(64,  activation='tanh'),
-									layers.Dense(64,  activation='tanh'),
-									layers.Dense(128, activation='tanh'),
-									layers.Dense(256, activation='tanh'),
-									layers.Dense(1,   activation='linear')])
+									layers.Dense(64, activation=activation),
+									layers.Dense(64, activation=activation),
+									layers.Dense(128, activation=activation),
+									layers.Dense(256, activation=activation),
+									layers.Dense(1, activation='linear')])
+	#model.compile(loss=custom_loss_function, optimizer=tf.keras.optimizers.Adam(0.001))
+	learning_rate = 0.0001
 	model.compile(loss=lgk_loss_function, optimizer=tf.keras.optimizers.Adam(0.001))
-	# model.compile(loss='mean_absolute_percentage_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.00001, clipnorm=1.0), metrics=['mae'])
-	# model.compile(loss='mean_absolute_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.000001, clipnorm=1.0), metrics=['mae'])
+	#model.compile(loss='mean_absolute_percentage_error', optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipnorm=1.0), metrics=['mae'])
 	#model.compile(loss='mean_absolute_error', optimizer=tf.keras.optimizers.Adam(0.001))
 	#model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(0.001))
 	return model
 
 
-def saveModel(model, rangeE):
+def saveModel(model, itera):
 
 	Date = datetime.datetime.now().strftime('%m-%d-%Y')
-	path = os.getcwd()+'/TrainedModels/'+rangeE+'/'
+	path = os.getcwd()+'/TrainedModels/'+Date+str(itera)+'/'
 	try:
 		os.mkdir(path)
 	except:
@@ -142,6 +147,7 @@ def test(filename, path, rangeE):
 		return
 	dataset = getData(filename)
 	r_e_calc = dataset.pop('r_e_calculated')
+	# clusNew = dataset.pop('clusterECalib_new')
 
 	print(dataset.iloc[0:50,:])
 	col_names = dataset.columns
@@ -151,10 +157,11 @@ def test(filename, path, rangeE):
 
 	test_predictions = dnn_model.predict(dataset).flatten()
 	dataset['r_e_calculated'] = r_e_calc
+	# dataset['clusterECalib_new'] = clusNew
 	dataset['r_e_predec'] = test_predictions
 
 	print(dataset.iloc[0:50,:])
 	dataset.to_csv('results_{}.csv'.format(rangeE), index=False)
 	print(test_predictions)
-
+	
 	return r_e_calc, test_predictions

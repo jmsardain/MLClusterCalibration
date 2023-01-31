@@ -17,10 +17,11 @@ def main():
     #                        ).reset_index()
 
     df2 = df[df.duplicated('jetRawE', keep=False)].groupby('jetRawE')['clusterE'].apply(list).reset_index()
-
     print("Done with reco")
     ## group LCW clusters by jet LCW E (since jet count is not working)
     df3 = df[df.duplicated('jetCalE', keep=False)].groupby('jetCalE')['clusterECalib'].apply(list).reset_index()
+    print("Done with LCW")
+    df4 = df[df.duplicated('jetRawE', keep=False)].groupby('jetRawE')['cluster_ENG_CALIB_TOT'].apply(list).reset_index()
     print("Done with LCW")
 
 
@@ -34,14 +35,21 @@ def main():
         CalcEnergyFromClusters_LCW.append(np.sum(listClusE))
     print("Done with computing sum of LCW clusters")
 
+    CalcEnergyFromClusters_Truth = []
+    for listClusE in df4.cluster_ENG_CALIB_TOT.values:
+        CalcEnergyFromClusters_Truth.append(np.sum(listClusE))
+    print("Done with computing sum of truth clusters")
+
     ## add column that contains the sum of clusters
     df2["CalcEnergy_clus"] = CalcEnergyFromClusters
     df3["CalcEnergy_clus"] = CalcEnergyFromClusters_LCW
+    df4["CalcEnergy_clus"] = CalcEnergyFromClusters_Truth
 
     print("Start saving")
 
     df2.to_csv("./energy_nocalib.csv", sep=" ")
     df3.to_csv("./energy_LCWcalib.csv", sep=" ")
+    df4.to_csv("./energy_truthcalib.csv", sep=" ")
 
 
     return

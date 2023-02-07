@@ -19,25 +19,93 @@ import tensorflow_probability as tfp
 import eli5
 from eli5.sklearn import PermutationImportance
 
+
+def transformData(data, dict):
+	a = -1
+	b = 1
+	data["clusterE"] = np.log(data["clusterE"].values)
+	data["cluster_FIRST_ENG_DENS"] = np.log(data["cluster_FIRST_ENG_DENS"].values)
+	data["cluster_CENTER_LAMBDA"] = np.log(data["cluster_CENTER_LAMBDA"].values)
+	for icol in data.columns:
+		arr = np.array(data[icol].values)
+		# minValue = np.quantile(arr, 0.01)
+		# maxValue = np.quantile(arr, 0.99)
+		minValue = dict[icol][0]
+		maxValue = dict[icol][1]
+
+		s = (b-a) / (maxValue - minValue)
+		newcol = a + s * (arr - minValue)
+		data[icol] = newcol
+
+	return data
+
+def transformInvData(df, dict):
+	a = -1
+	b = 1
+	for icol in df.columns:
+		arr = np.array(df[icol].values)
+		minValue = dict[icol][0]
+		maxValue = dict[icol][1]
+		s = (b-a) / (maxValue - minValue)
+		newcol = minValue + (arr - a) / s
+		if icol=="clusterE" or icol=="cluster_FIRST_ENG_DENS" or icol=="cluster_CENTER_LAMBDA":
+			df[icol] = np.exp(newcol)
+		else:
+			df[icol] = newcol
+
+	return df
+'''
 def getData(filename):
 	res = pd.read_csv(filename)
-	df = res.drop(columns=['cluster_ENG_CALIB_TOT', 'clusterECalib_new', 'clusterECalib_old'])
-	for icol in df.columns:
-		if icol== "r_e_calculated":
-			continue
-		arr = np.array(df[icol].values)
-		if icol == "clusterE" or icol == "cluster_FIRST_ENG_DENS":
-		 	arr = np.log(arr)
-		brr = [[i] for i in arr]
-		quantile = QuantileTransformer(random_state=0, output_distribution='normal')
+	df = res.drop(columns=['cluster_ENG_CALIB_TOT', 'clusterECalib_new'])
+	# df = res.drop(columns=['cluster_ENG_CALIB_TOT', 'clusterECalib_new', 'clusterECalib_old'])
+
+	dict_min_max = {}
+	print("{} {}".format(np.percentile(df["clusterE"], 0) , np.percentile(df["clusterE"], 100)))
+	print("{} {}".format(np.percentile(df["r_e_calculated"], 0) , np.percentile(df["r_e_calculated"], 100)))
+	for i in df.columns:
+		if i=="clusterE" or i=="cluster_FIRST_ENG_DENS" or i=="cluster_CENTER_LAMBDA":
+			dict_min_max[i] = [np.percentile(np.log(df[i]), 0) , np.percentile(np.log(df[i]), 100)]
+		else:
+			dict_min_max[i] = [np.percentile(df[i], 0) , np.percentile(df[i], 100)]
+
+	# for icol in df.columns:
+	#	if icol== "r_e_calculated":
+	#		continue
+	#	arr = np.array(df[icol].values)
+	#	if icol == "clusterE" or icol == "cluster_FIRST_ENG_DENS":
+	#	 	arr = np.log(arr)
+	#	brr = [[i] for i in arr]
+		# quantile = QuantileTransformer(random_state=0, output_distribution='normal')
 		# quantile = StandardScaler()
-		data_trans = quantile.fit_transform(brr)
-		newcol = data_trans.flatten()
-		df[icol] = newcol
-	return df
+		# data_trans = quantile.fit_transform(brr)
+		# newcol = data_trans.flatten()
+	#	df[icol] = newcol
+	
+	df1 = transformData(df, dict_min_max)
+	return df1
+'''
 
+def getData(filename):
+        res = pd.read_csv(filename)
+        # df = res.drop(columns=['cluster_ENG_CALIB_TOT', 'clusterECalib_new'])
+        df = res.drop(columns=['cluster_ENG_CALIB_TOT', 'clusterECalib_new', 'clusterECalib_old'])
+        for icol in df.columns:
+                if icol== "r_e_calculated":
+                        continue
+                arr = np.array(df[icol].values)
+                if icol == "clusterE" or icol == "cluster_FIRST_ENG_DENS":
+                        arr = np.log(arr)
+                brr = [[i] for i in arr]
+                quantile = QuantileTransformer(random_state=0, output_distribution='normal')
+                # quantile = StandardScaler()
+                data_trans = quantile.fit_transform(brr)
+                newcol = data_trans.flatten()
+                df[icol] = newcol
 
-def train(filename, epochs, batch_size, activation, i):
+        return df
+
+def train(filename, epochs, batch_size, i):
 	dataset = getData(filename)
 	train_dataset = dataset.sample(frac=0.8, random_state=0)
 	test_dataset = dataset.drop(train_dataset.index)
@@ -51,12 +119,10 @@ def train(filename, epochs, batch_size, activation, i):
 	test_labels = test_features.pop('r_e_calculated')
 
 	# Do not train on old, new clusterECalib
-	# train_features.pop('clusterECalib_new')
-	# train_features.pop('clusterECalib_old')
 
 	print("input features: {}".format(train_features.columns))
 	print("target features: {}".format(train_labels.name))
-	dnn_model = build_and_compile_model(train_features, activation)
+	dnn_model = build_and_compile_model(train_features)
 	dnn_model.summary()
 	
 
@@ -83,18 +149,11 @@ def train(filename, epochs, batch_size, activation, i):
 
 
 
-def custom_loss_function(y_true, y_pred):
-	medianloss = tfp.stats.percentile(tf.math.abs(y_true - y_pred), q=50.)
-	#return tf.reduce_mean(medianloss)
-	return medianloss
-
-
 def lgk_loss_function(y_true, y_pred):
-	# alpha = 0.001
-	# bandwith = 0.5
 	alpha = tf.constant(0.05)
-	bandwith = tf.constant(0.04)
+	bandwith = tf.constant(0.5)
 	pi = tf.constant(math.pi)
+
 	## LGK (h and alpha are hyperparameters)
 	norm = -1/(bandwith*tf.math.sqrt(2*pi))
 	gaussian_kernel  = norm * tf.math.exp( -(y_true - y_pred)**2 / (2*(bandwith**2)))
@@ -102,7 +161,8 @@ def lgk_loss_function(y_true, y_pred):
 	lgk_loss = gaussian_kernel + leakiness
 	return lgk_loss
 
-def build_and_compile_model(X_train, activation):
+def build_and_compile_model(X_train):
+	activation = tf.nn.silu
 	#model = keras.Sequential([norm, layers.Dense(64, activation='relu'), layers.Dense(64, activation='relu'), layers.Dense(1)])
 	# Original: four layers, tanh activation
 	model = keras.Sequential([layers.Flatten(input_shape=(X_train.shape[1],)),
@@ -112,9 +172,8 @@ def build_and_compile_model(X_train, activation):
 									layers.Dense(256, activation=activation),
 									layers.Dense(1, activation='linear')])
 	#model.compile(loss=custom_loss_function, optimizer=tf.keras.optimizers.Adam(0.001))
-	learning_rate = 0.0001
 	model.compile(loss=lgk_loss_function, optimizer=tf.keras.optimizers.Adam(0.001))
-	#model.compile(loss='mean_absolute_percentage_error', optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipnorm=1.0), metrics=['mae'])
+	#model.compile(loss='mean_absolute_percentage_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0), metrics=['mae'])
 	#model.compile(loss='mean_absolute_error', optimizer=tf.keras.optimizers.Adam(0.001))
 	#model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(0.001))
 	return model
@@ -123,7 +182,7 @@ def build_and_compile_model(X_train, activation):
 def saveModel(model, itera):
 
 	Date = datetime.datetime.now().strftime('%m-%d-%Y')
-	path = os.getcwd()+'/TrainedModels/'+Date+str(itera)+'/'
+	path = os.getcwd()+'/TrainedModels/'+Date+'/'
 	try:
 		os.mkdir(path)
 	except:

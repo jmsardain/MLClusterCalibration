@@ -47,22 +47,16 @@ def main():
 		# epochs = [5, 25, 100, 200]
 		epoch = 100
 		batch_size = 1024
-		tests = ['tanh']
 		itera = 1
 		
 		file = open("hyperparameters.txt", "a")
-		for activation in tests:
-			# to_write = "4 hidden layers, " + str(epoch) + "epochs, " + str(batch_size) + "batch size, " + str(activation) + "activation"
-			# file.write(to_write)
-			history = train(filename, epoch, batch_size, activation, itera)
-			utils.plot_loss(history)
-			# utils.plot_metrics(history, file, itera, epoch,  batch_size, activation)
+		history = train(filename, epoch, batch_size, itera)
+		utils.plot_loss(history)
 		file.close()
 
 	# -- Get prediction on test dataset
 	if args.test:
 		filename = pathToCSVFile+"test_{}.csv".format(args.rangeE)
-		activation = 'tanh'
 		r_e_calc, test_predictions = test(filename, args.path, args.rangeE)
 		utils.plotRealVsPredict(r_e_calc, test_predictions)
 		utils.plotRealPredict(r_e_calc, test_predictions)

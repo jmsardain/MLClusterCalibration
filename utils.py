@@ -94,45 +94,28 @@ def finalplot(testName, resultName):
     df_res   = pd.read_csv(resultName)
 
     # -- Get all common columns
-    # col = ['clusterE', 'clusterEtaCalib', 'cluster_CENTER_LAMBDA', 'cluster_ENG_FRAC_EM',
-    #     'cluster_FIRST_ENG_DENS', 'cluster_LATERAL', 'cluster_LONGITUDINAL',
-    #     'cluster_PTD', 'cluster_SECOND_TIME', 'cluster_SIGNIFICANCE',
-    #     'nPrimVtx', 'avgMu', 'r_e_calculated']
-    # col = ['clusterE', 'r_e_calculated',
-    #                 'cluster_nCells_tot', 'cluster_SIGNIFICANCE',
-    #                 'cluster_time', 'cluster_sumCellE', 'cluster_nCells', 'cluster_ENG_POS',
-    #                 'cluster_FIRST_ENG_DENS', 'clusterPt', 'cluster_CENTER_LAMBDA',
-    #                 'cluster_PTD', 'cluster_CELL_SIG_SAMPLING',
-    #                 'cluster_SECOND_ENG_DENS', 'cluster_CELL_SIGNIFICANCE', 'cluster_MASS',
-    #                 #'cluster_ENG_FRAC_MAX', 'cluster_ENG_FRAC_EM'
-    #                 ]
-    col = ['r_e_calculated',
-           'nPrimVtx', 'avgMu',
-           'clusterE', 'clusterPt', 'clusterPhi', 'cluster_MASS', 'cluster_sumCellE',
-           'cluster_time', 'cluster_fracE', 'cluster_PTD', 'cluster_ISOLATION',
-           'cluster_FIRST_ETA', 'cluster_FIRST_PHI', 'cluster_FIRST_ENG_DENS',
-           'cluster_SECOND_TIME', 'cluster_SECOND_R', 'cluster_SECOND_LAMBDA', 'cluster_SECOND_ENG_DENS',
-           'cluster_CENTER_LAMBDA', 'cluster_CENTER_MAG', 'cluster_CENTER_X', 'cluster_CENTER_Y', 'cluster_CENTER_Z',
-           'cluster_ENG_BAD_CELLS', 'cluster_ENG_BAD_HV_CELLS', 'cluster_ENG_FRAC_EM', 'cluster_ENG_FRAC_MAX', 'cluster_ENG_FRAC_CORE', 'cluster_ENG_POS',
-           'cluster_DELTA_THETA', 'cluster_DELTA_PHI',
-           'cluster_CELL_SIGNIFICANCE', 'cluster_CELL_SIG_SAMPLING',
-           'cluster_N_BAD_CELLS', 'cluster_BAD_CELLS_CORR_E',
-           'cluster_LONGITUDINAL', 'cluster_LATERAL', 'cluster_SIGNIFICANCE',
-           'nCluster', 'cluster_N_BAD_HV_CELLS', 'cluster_nCells', 'cluster_nCells_tot',
-           ]
-    # -- Check if the values are the same (they should be, this is just a protection)
-    # for icol in col:
-    #     print(icol)
-    #     arr_test = np.array(df_test[icol].values)
-    #     arr_res  = np.array(df_res[icol].values)
-    #     flag = np.array_equal(arr_test, arr_res)
-    #     print(flag)
-    #     if flag==False:
-    #         print("{} is false. Return.")
-    #         return
+    col= ['r_e_calculated', 'clusterE', 'clusterEtaCalib', 'cluster_CENTER_MAG',
+          'cluster_CENTER_LAMBDA', 'cluster_ENG_FRAC_EM', 'cluster_FIRST_ENG_DENS',
+          'cluster_LATERAL', 'cluster_LONGITUDINAL', 'cluster_PTD', 'cluster_time',
+          'cluster_ISOLATION', 'cluster_SECOND_TIME', 'cluster_SIGNIFICANCE',
+          'nPrimVtx', 'avgMu']
+    # col = ['r_e_calculated',
+    #       'nPrimVtx', 'avgMu',
+    #       'clusterE', 'clusterPt', 'clusterPhi', 'cluster_MASS', 'cluster_sumCellE',
+    #       'cluster_time', 'cluster_fracE', 'cluster_PTD', 'cluster_ISOLATION',
+    #       'cluster_FIRST_ETA', 'cluster_FIRST_PHI', 'cluster_FIRST_ENG_DENS',
+    #       'cluster_SECOND_TIME', 'cluster_SECOND_R', 'cluster_SECOND_LAMBDA', 'cluster_SECOND_ENG_DENS',
+    #       'cluster_CENTER_LAMBDA', 'cluster_CENTER_MAG', 'cluster_CENTER_X', 'cluster_CENTER_Y', 'cluster_CENTER_Z',
+    #       'cluster_ENG_BAD_CELLS', 'cluster_ENG_BAD_HV_CELLS', 'cluster_ENG_FRAC_EM', 'cluster_ENG_FRAC_MAX', 'cluster_ENG_FRAC_CORE', 'cluster_ENG_POS',
+    #       'cluster_DELTA_THETA', 'cluster_DELTA_PHI',
+    #       'cluster_CELL_SIGNIFICANCE', 'cluster_CELL_SIG_SAMPLING',
+    #       'cluster_N_BAD_CELLS', 'cluster_BAD_CELLS_CORR_E',
+    #       'cluster_LONGITUDINAL', 'cluster_LATERAL', 'cluster_SIGNIFICANCE',
+    #       'nCluster', 'cluster_N_BAD_HV_CELLS', 'cluster_nCells', 'cluster_nCells_tot',
+    #       ]
 
     # -- Create new dataframe that will be used for final plots
-    columnsname = col + ['r_e_predec', 'cluster_ENG_CALIB_TOT', 'cluster_ENG_TOT_frompred', 'clusterECalib_old', 'clusterECalib_new']
+    columnsname = col + ['r_e_predec', 'cluster_ENG_TOT_frompred', 'clusterECalib', 'cluster_ENG_CALIB_TOT']
     df_plot = pd.DataFrame(columns=columnsname)
 
     for icolumn in columnsname:
@@ -147,22 +130,5 @@ def finalplot(testName, resultName):
             df_plot[icolumn] = df_test[icolumn]
 
 
-    # r_e_calc     = np.array(df_res["r_e_calculated"].values)
-    # r_e_pred     = np.array(df_res["r_e_predec"].values)
-    # clusE        = np.array(df_res["clusterE"].values)
-    #
-    #
-    # clusTOT      = np.array(df_test["cluster_ENG_CALIB_TOT"].values)
-    # clusTOT_pred = np.array(df_res["clusterE"].values) / np.array(df_res["r_e_predec"].values)
-    #
-    # df_plot["r_e_calculated"]           = r_e_calc
-    # df_plot["r_e_predec"]               = r_e_pred
-    # df_plot["clusterE"]                 = clusE
-    # df_plot["cluster_ENG_CALIB_TOT"]    = clusTOT
-    # df_plot["cluster_ENG_TOT_frompred"] = clusTOT_pred
-
     return df_plot
 
-#['r_e_calculated', 'r_e_predec', 'TOT_frompred', 'clusterE',  'cluster_ENG_CALIB_TOT', 'clusterEtaCalib', 'cluster_CENTER_LAMBDA',
-#'cluster_ENG_FRAC_EM', 'cluster_FIRST_ENG_DENS', 'cluster_LATERAL', 'cluster_LONGITUDINAL',
-#'cluster_PTD', 'cluster_SECOND_TIME', 'cluster_SIGNIFICANCE', 'nPrimVtx', 'avgMu']

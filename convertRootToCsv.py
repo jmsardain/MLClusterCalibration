@@ -4,6 +4,7 @@ import numpy  as np
 import argparse
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import  QuantileTransformer
+from sklearn.model_selection import train_test_split
 
 
 def splitDataframe(df, cutoff=0.8):
@@ -89,7 +90,6 @@ def main():
     args = parser.parse_args()
 
     # -- Start
-#    filename="data/JZ.topo-cluster.root"
     filename="/data1/atlng02/loch/Summer2022/MLTopoCluster/data/Akt4EMTopo.topo_cluster.root"
     file = ur.open(filename)
     print("This is running...\n\n")
@@ -130,7 +130,6 @@ def main():
             print("Not defined")
             return
         print(variation)
-        #df = df[df["cluster_FIRST_ENG_DENS"] !=0] ## remove variables that would give inf when logged
 
         # -- Add response
         resp = np.array( df.clusterE.values ) /  np.array( df.cluster_ENG_CALIB_TOT.values )
@@ -147,61 +146,16 @@ def main():
         # -- Define train and test (train is 0.8 of whole root file, test is the rest)
         train, test = splitDataframe(df, cutoff=args.cutoff)
         print("I am here")
+
         # -- Select the needed columns for training and testing
-        # column_names = ['clusterE', 'clusterECalib', 'clusterEtaCalib', 'cluster_ENG_CALIB_TOT',
-        #                 'cluster_CENTER_LAMBDA', 'cluster_ENG_FRAC_EM', 'cluster_FIRST_ENG_DENS',
-        #                 'cluster_LATERAL', 'cluster_LONGITUDINAL', 'cluster_PTD',
-        #                 'cluster_SECOND_TIME', 'cluster_SIGNIFICANCE', 'nPrimVtx', 'avgMu', 'r_e_calculated'
-        #                 ]
-
-        column_names = ['r_e_calculated',
-                        'nPrimVtx', 'avgMu',
-                        'clusterE', 'clusterPt', 'clusterPhi', 'cluster_MASS', 'cluster_sumCellE',
-                        'cluster_time', 'cluster_fracE', 'cluster_PTD', 'cluster_ISOLATION',
-                        'cluster_FIRST_ETA', 'cluster_FIRST_PHI', 'cluster_FIRST_ENG_DENS',
-                        'cluster_SECOND_TIME', 'cluster_SECOND_R', 'cluster_SECOND_LAMBDA', 'cluster_SECOND_ENG_DENS',
-                        'cluster_CENTER_LAMBDA', 'cluster_CENTER_MAG', 'cluster_CENTER_X', 'cluster_CENTER_Y', 'cluster_CENTER_Z',
-                        'cluster_ENG_BAD_CELLS', 'cluster_ENG_BAD_HV_CELLS', 'cluster_ENG_FRAC_EM', 'cluster_ENG_FRAC_MAX', 'cluster_ENG_FRAC_CORE', 'cluster_ENG_POS',
-                        'cluster_DELTA_THETA', 'cluster_DELTA_PHI',
-                        'cluster_CELL_SIGNIFICANCE', 'cluster_CELL_SIG_SAMPLING',
-                        'cluster_N_BAD_CELLS', 'cluster_BAD_CELLS_CORR_E',
-                        'cluster_LONGITUDINAL', 'cluster_LATERAL', 'cluster_SIGNIFICANCE',
-                        'nCluster', 'cluster_N_BAD_HV_CELLS', 'cluster_nCells', 'cluster_nCells_tot',
-                        'cluster_ENG_CALIB_TOT', 'clusterECalib_old', 'clusterECalib_new'
-                        ]
-
-        # column_names = ['clusterE', 'clusterPt', 'clusterPhi', 'cluster_SECOND_R',
-        #                 'clusterECalib', 'cluster_ENG_CALIB_TOT', 'r_e_calculated',
-        #                 'cluster_nCells_tot', 'cluster_SIGNIFICANCE',
-        #                 'cluster_time', 'cluster_sumCellE', 'cluster_nCells', 'cluster_ENG_POS',
-        #                 'cluster_FIRST_ENG_DENS', 'cluster_CENTER_LAMBDA', 'cluster_CENTER_MAG',
-        #                 'cluster_PTD', 'cluster_CELL_SIG_SAMPLING',
-        #                 'cluster_SECOND_ENG_DENS', 'cluster_CELL_SIGNIFICANCE', 'cluster_MASS',
-        #                 'cluster_ENG_FRAC_MAX', 'cluster_ENG_FRAC_EM',
-        #                 'nPrimVtx', 'clusterEtaCalib',
-        #                 ]
-
-        # column_names = ['avgMu', 'nPrimVtx',
-        #                 'nCluster', 'clusterIndex', 'cluster_nCells', 'cluster_nCells_tot', 'clusterE', 'clusterPt',
-        #                 'clusterPhi', 'cluster_sumCellE', 'cluster_time', 'cluster_fracE', 'clusterEtaCalib',
-        #                 'cluster_EM_PROBABILITY', 'cluster_HAD_WEIGHT', 'cluster_OOC_WEIGHT', 'cluster_DM_WEIGHT',
-        #                 'cluster_ENG_CALIB_TOT', 'clusterECalib',
-        #                 'cluster_CENTER_MAG', 'cluster_FIRST_ENG_DENS', 'cluster_FIRST_PHI',
-        #                 'cluster_FIRST_ETA', 'cluster_SECOND_R', 'cluster_SECOND_LAMBDA',
-        #                 'cluster_DELTA_PHI', 'cluster_DELTA_THETA', 'cluster_DELTA_ALPHA',
-        #                 'cluster_CENTER_X', 'cluster_CENTER_Y', 'cluster_CENTER_Z',
-        #                 'cluster_CENTER_LAMBDA', 'cluster_LATERAL', 'cluster_LONGITUDINAL',
-        #                 'cluster_ENG_FRAC_EM', 'cluster_ENG_FRAC_MAX',
-        #                 'cluster_ENG_FRAC_CORE', 'cluster_SECOND_ENG_DENS',
-        #                 'cluster_ISOLATION', 'cluster_ENG_BAD_CELLS', 'cluster_N_BAD_CELLS',
-        #                 'cluster_N_BAD_CELLS_CORR', 'cluster_BAD_CELLS_CORR_E',
-        #                 'cluster_BADLARQ_FRAC', 'cluster_ENG_POS', 'cluster_SIGNIFICANCE',
-        #                 'cluster_CELL_SIGNIFICANCE', 'cluster_CELL_SIG_SAMPLING',
-        #                 'cluster_AVG_LAR_Q', 'cluster_AVG_TILE_Q',
-        #                 'cluster_ENG_BAD_HV_CELLS', 'cluster_N_BAD_HV_CELLS', 'cluster_PTD',
-        #                 'cluster_MASS', 'cluster_SECOND_TIME', 'r_e_calculated']
-        df_train = train[column_names]
-        df_test  = test[column_names]
+        column_names = ['r_e_calculated', 'clusterE', 'clusterEtaCalib', 'cluster_CENTER_MAG',
+                        'cluster_ENG_FRAC_EM', 'cluster_FIRST_ENG_DENS',
+                        'cluster_LATERAL', 'cluster_LONGITUDINAL', 'cluster_PTD', 'cluster_time',
+                        'cluster_ISOLATION', 'cluster_SECOND_TIME', 'cluster_SIGNIFICANCE',
+                        'nPrimVtx', 'avgMu', 'cluster_ENG_CALIB_TOT', 'clusterECalib_new']
+        df  = df[column_names]
+        labels = df['r_e_calculated']
+        df_train, df_test, train_target, test_target = train_test_split(df, labels, test_size=0.2, random_state=2)
 
         # -- Sanity cuts (if not done, this variable gives inf when logged)
         df_train = df_train[(df_train["cluster_FIRST_ENG_DENS"] > 0)]

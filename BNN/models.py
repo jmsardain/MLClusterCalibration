@@ -29,6 +29,15 @@ rcParams['legend.frameon']=False
 rcParams["errorbar.capsize"] = 8.0
 rcParams['lines.linewidth'] = 2.
 
+def tanhone(input):
+    return 3 * ( torch.tanh(input) + 1 )
+
+class TanhPlusOne(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input):
+        return tanhone(input) # simply apply already implemented SiLU
 
 class BNN(nn.Module):
     def __init__(self, training_size, inner_layers, input_dim, activation_inner='tanh', activation_last=None):
@@ -48,7 +57,8 @@ class BNN(nn.Module):
             self.all_layers.append(vb_layer)
             if i < (len(inner_layers)-2): # skipping last layer
                 if activation_inner.lower() == "tanh":
-                    self.all_layers.append(nn.Tanh())
+                    # self.all_layers.append(nn.Tanh())
+                    self.all_layers.append(TanhPlusOne())
                 elif activation_inner.lower() == "relu":
                     self.all_layers.append(nn.ReLU())
                 elif activation_inner.lower() == "softplus":
@@ -61,7 +71,7 @@ class BNN(nn.Module):
         self.last_activation = None
         if activation_last is not None:
             if activation_last.lower() == "tanh":
-                self.last_activation = nn.tanh()
+                self.last_activation = nn.Tanh()
             elif activation_last.lower() == "relu":
                 self.last_activation = nn.ReLU()
             elif activation_last.lower() == "softplus":

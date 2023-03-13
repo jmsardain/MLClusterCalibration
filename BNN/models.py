@@ -29,6 +29,9 @@ rcParams['legend.frameon']=False
 rcParams["errorbar.capsize"] = 8.0
 rcParams['lines.linewidth'] = 2.
 
+
+
+
 def tanhone(input):
     return 3 * ( torch.tanh(input) + 1 )
 

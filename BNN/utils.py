@@ -33,7 +33,7 @@ rcParams['lines.linewidth'] = 2.
 
 
 
-def train_loop(dataloader, model, loss_fn, optimizer, loss_dict):
+def train_loop(dataloader, model, optimizer, loss_dict):
 
     size = len(dataloader.dataset)
     model.train()
@@ -47,8 +47,7 @@ def train_loop(dataloader, model, loss_fn, optimizer, loss_dict):
         x = data[:, :-1].float()
         y = data[:, -1]
 
-        pred = model(x)
-        neg_log = loss_fn(pred, y)
+        neg_log = model.neg_log_likelihood(x, y)
         kl = model.KL()
         loss = neg_log + kl
 
@@ -57,6 +56,7 @@ def train_loop(dataloader, model, loss_fn, optimizer, loss_dict):
         loss.backward()
         optimizer.step()
 
+        pred = model(x)
         mse = torch.pow(pred[:, 0] - y, 2).mean()
         mse_normalized = torch.mean(torch.pow((pred[:, 0] - y), 2) / pred[:, 1].exp())
 
@@ -85,7 +85,7 @@ def train_loop(dataloader, model, loss_fn, optimizer, loss_dict):
     return loss_dict
 
 
-def val_pass(dataloader, model, loss_fn, loss_dict):
+def val_pass(dataloader, model, loss_dict):
 
     loss_tot, kl_tot, neg_log_tot, mse_tot = 0, 0, 0, 0
     mse_norm_tot = 0
@@ -98,12 +98,11 @@ def val_pass(dataloader, model, loss_fn, loss_dict):
             x = data[:, :-1].float()
             y = data[:, -1]
 
-            pred = model(x)
-            neg_log = loss_fn(pred, y)
+            neg_log = model.neg_log_likelihood(x, y)
             kl = model.KL()
-            loss = kl
             loss = neg_log + kl
 
+            pred = model(x) # inefficient!
             mse = torch.pow(pred[:, 0] - y, 2).mean()
             mse_normalized = torch.mean(torch.pow((pred[:, 0] - y), 2) / pred[:, 1].exp())
 
@@ -131,6 +130,7 @@ def val_pass(dataloader, model, loss_fn, loss_dict):
 
     return loss_dict
 
+# TODO
 def train_loop_mse(dataloader, model, optimizer, loss_dict):
 
     size = len(dataloader.dataset)
@@ -145,8 +145,6 @@ def train_loop_mse(dataloader, model, optimizer, loss_dict):
         # Compute prediction and loss
         x = data[:, :-1].float()
         y = data[:, -1]
-
-        #print(x.shape, y.shape)
 
         pred = model(x)[:, 0]
         loss = torch.pow(pred - y, 2).mean()
@@ -168,6 +166,7 @@ def train_loop_mse(dataloader, model, optimizer, loss_dict):
     return loss_dict
 
 
+# TODO
 def val_pass_mse(dataloader, model, loss_dict):
 
     size = len(dataloader.dataset)
@@ -197,7 +196,7 @@ def val_pass_mse(dataloader, model, loss_dict):
     return loss_dict
 
 
-def train_loop_det(dataloader, model, loss_fn, optimizer, loss_dict):
+def train_loop_det(dataloader, model, optimizer, loss_dict):
 
     size = len(dataloader.dataset)
     model.train()
@@ -210,15 +209,15 @@ def train_loop_det(dataloader, model, loss_fn, optimizer, loss_dict):
         x = data[:, :-1].float()
         y = data[:, -1]
 
-        pred = model(x)
-        neg_log = loss_fn(pred, y)
-        loss = neg_log
+        neg_log = model.neg_log_likelihood(x, y)
+        loss = neg_log + kl
 
         # Backpropagation
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
+        pred = model(x)
         mse = torch.pow(pred[:, 0] - y, 2).mean()
         mse_normalized = torch.mean(torch.pow((pred[:, 0] - y), 2) / pred[:, 1].exp())
 
@@ -279,7 +278,6 @@ def val_pass_det(dataloader, model, loss_fn, loss_dict):
 
     return loss_dict
 
-
 def neg_log_gauss(outputs, targets):
 
     mu = outputs[:, 0]
@@ -287,7 +285,6 @@ def neg_log_gauss(outputs, targets):
 
     out = torch.pow(mu - targets, 2) / (2 * logsigma2.exp()) + 1./2. * logsigma2
     return torch.mean(out)
-
 
 def create_directory(dir_path):
 

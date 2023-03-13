@@ -12,5 +12,6 @@ python train_bnn.py --output_path ./output \
                     --val_size 200000 \
                     --test_size 100000 \
                     --save_weights_iter 10 \
-                    --target resp \
-                    --mode bayesian
+                    --bayesian=true \
+                    --likelihood='normal' \
+                    --prediction='mean'

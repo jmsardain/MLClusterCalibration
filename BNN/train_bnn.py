@@ -23,30 +23,16 @@ from scipy.stats import norm
 from utils import *
 from models import *
 
-#####################################
+###################################
 ### MPL SETTINGS ###
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib import rc
-from matplotlib import rcParams
 import matplotlib as mpl
 
-# TODO: put somewhere else or better define MPL settings file
+plt.style.use("./plotting.mplstyle")
 
-FONTSIZE=15
-rc('font',**{'family':'serif','serif':['Helvetica'],'size':FONTSIZE})
-rc('text', usetex=True);
-rc('xtick', labelsize=FONTSIZE);
-rc('ytick', labelsize=FONTSIZE)
-rc('text.latex', preamble=r'\usepackage{amsmath}')
-
-rcParams['legend.loc']="upper right"
-rcParams['legend.frameon']=False
-rcParams["errorbar.capsize"] = 8.0
-rcParams['lines.linewidth'] = 2.
-
-########################################
+#####################################
 
 def main():
 
@@ -163,28 +149,59 @@ def main():
         type=str,
     )
 
+
     args = parser.parse_args()
 
     ##############################
-    ### Additional parameters ###
-
-    # TODO: make flag
-    input_dim  = 15
-
-    ##########################################################
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+
+    redirect_outputs = True
 
     ########################################
 
     dir_path = create_directory(args.output_path)
 
-    # redirect outputs
-    sys.stdout = open(dir_path + "/std.out", 'w')
-    sys.stderr = open(dir_path + "/err.out", 'w')
+    if (redirect_outputs):
+        sys.stdout = open(dir_path + "/std.out", 'w')
+        sys.stderr = open(dir_path + "/err.out", 'w')
+
+    ##############################
+    # set up datasets and dataloaders
+
+    # train dataset
+    dataset_train = np.load(args.data_path_train)
+    x_train = dataset_train[:args.train_size, 1:]
+    y_train = dataset_train[:args.train_size, 0]
+    data_train = np.concatenate([x_train, y_train[:, None]], axis=-1)
+    data_train = torch.from_numpy(data_train).to(device)
+    print(f"Training dataset size {y_train.shape[0]}")
+
+    # val dataset
+    dataset_val = np.load(args.data_path_val)
+    x_val = dataset_val[:args.val_size, 1:]
+    y_val = dataset_val[:args.val_size, 0] 
+    data_val = np.concatenate([x_val, y_val[:, None]], axis=-1)
+    data_val = torch.from_numpy(data_val).to(device)
+    print(f"Validation dataset size {y_val.shape[0]}")
+
+    # test dataset
+    dataset_test = np.load(args.data_path_test)
+    x_test = dataset_test[:args.test_size, 1:]
+    y_test = dataset_test[:args.test_size, 0]
+    y_test = torch.from_numpy(y_test).to(device)
+    x_test = torch.from_numpy(x_test).to(device)
+    print(f"Test dataset size {y_test.shape[0]}")
+
+    # data loaders
+    train_dataloader = DataLoader(data_train, batch_size=args.batch_size, shuffle=True)
+    val_dataloader = DataLoader(data_val, batch_size=args.batch_size, shuffle=True)
+
+    input_dim = x_train.shape[1]
 
     ###############################
+    # set up neural network for training
 
     if args.bayesian:
         if args.likelihood.lower() == "normal":
@@ -206,9 +223,6 @@ def main():
             ).to(device)
 
         elif args.likelihood.lower() in ["mixturenormal", "mixture-normal", "mixture_normal"]:
-            # TODO: this probably still has to be debugged!
-            raise AssertionError("Should be first debugged!")
-
             model = BNN_normal_mixture(
                 args.train_size,
                 args.layer,
@@ -242,47 +256,16 @@ def main():
         else:
             raise NotImplemented(f"Option for args.likelihood is not implemented! Given {args.likelihood}")
 
-    print(model)
-
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(model)
     print("Number of parameters of model: {}".format(n_params))
 
-    ##############################
-    # set up datasets and dataloaders
-
-    # train dataset
-    dataset_train = np.load(args.data_path_train)
-    x_train = dataset_train[:args.train_size, 1:]
-    y_train = dataset_train[:args.train_size, 0]
-    data_train = np.concatenate([x_train, y_train[:, None]], axis=-1)
-    data_train = torch.from_numpy(data_train).to(device)
-    print(f"Training dataset size {y_train.shape[0]}")
-
-    # val dataset
-    dataset_val = np.load(args.data_path_val)
-    x_val = dataset_val[:args.val_size, 1:]
-    y_val = dataset_val[:args.val_size, 0] 
-    data_val = np.concatenate([x_val, y_val[:, None]], axis=-1)
-    data_val = torch.from_numpy(data_val).to(device)
-    print(f"Validation dataset size {y_val.shape[0]}")
-
-    # test dataset
-    dataset_test = np.load(args.data_path_test)
-    x_test = dataset_test[:args.test_size, 1:]
-    y_test = dataset_test[:args.test_size, 0]
-    y_test = torch.from_numpy(y_test).to(device)
-    x_test = torch.from_numpy(x_test).to(device)
-    print(f"Test dataset size {y_test.shape[0]}")
-
-    # data loaders
-    train_dataloader = DataLoader(data_train, batch_size=args.batch_size, shuffle=True)
-    val_dataloader = DataLoader(data_val, batch_size=args.batch_size, shuffle=True)
-
     ##################################
-    # optimizer
+    # set up optimizer
+
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    # save arguments
+    # save all hyperparameters in text file
     with open(dir_path + "/args.txt", mode="w") as f:
         print("-"*100)
         print("Arguments:")

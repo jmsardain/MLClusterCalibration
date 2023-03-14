@@ -1,0 +1,34 @@
+#### MPL style file ####
+
+## text font settings ##
+font.family:  serif
+#font.style:   normal
+#font.variant: normal
+#font.weight:  normal
+#font.stretch: normal
+font.size:    15
+
+## text font size
+axes.titlesize : 15
+axes.labelsize : 15
+xtick.labelsize : 15
+ytick.labelsize : 15
+
+## use latex
+text.usetex : True
+text.latex.preamble : \usepackage{amsmath}
+
+## markers and lines
+lines.linewidth : 2
+lines.markersize : 1
+
+## figure
+figure.figsize : 5.5, 5
+
+## legend
+legend.loc : upper right
+legend.frameon : False
+
+## additional settings
+#errorbar.capsize = 2.
+hist.bins: 50

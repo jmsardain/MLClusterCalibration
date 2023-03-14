@@ -1,38 +1,12 @@
+#########################################
+### Imports ###
+
 from vblinear import VBLinear
 import torch
 from torch import nn
 import numpy as np
-from torch.utils.data import DataLoader, TensorDataset
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-import os
-import sys
-from collections import defaultdict
-import argparse
-from scipy.stats import norm
-
-#####################################
-### MPL SETTINGS ###
-
-# TODO: do we need the MPL settings here?
-
-from matplotlib import rc
-from matplotlib import rcParams
-
-FONTSIZE=15
-rc('font',**{'family':'serif','serif':['Helvetica'],'size':FONTSIZE})
-rc('text', usetex=True);
-rc('xtick', labelsize=FONTSIZE);
-rc('ytick', labelsize=FONTSIZE)
-rc('text.latex', preamble=r'\usepackage{amsmath}')
-
-rcParams['legend.loc']="upper right"
-rcParams['legend.frameon']=False
-rcParams["errorbar.capsize"] = 8.0
-rcParams['lines.linewidth'] = 2.
 
 #########################################
-
 
 def tanhone(input):
     return 3 * ( torch.tanh(input) + 1 )
@@ -338,26 +312,30 @@ class BNN_normal_mixture(BNN):
     # overwrite, this is not nice, TODO
     def forward(self, x):
         y = self.model(x)
-        y, alphas = y[:, :self.out_dim*2], y[:, self.out_dim*2:]
-        alphas = nn.Softmax()(alphas)
+        y, alphas = y[:, :self.n_mixtures*2], y[:, self.n_mixtures*2:]
+        alphas = nn.Softmax(dim=-1)(alphas)
         return torch.cat((y, alphas), axis=1)
 
     def neg_log_likelihood(self, x, targets):
 
         outputs = self.forward(x)
 
-        print(f"Number of mixtures {n_mixtures}")
+        #print(f"Number of mixtures {self.n_mixtures}")
         x = targets[:, None]
-        mus = outputs[:, :n_mixtures] 
-        logsigma2s = outputs[:, n_mixtures:n_mixtures*2]
-        alphas = outputs[:, 2*n_mixtures:] # have to be between 0 and 1! TODO
+        mus = outputs[:, :self.n_mixtures] 
+        logsigma2s = outputs[:, self.n_mixtures:self.n_mixtures*2]
+        alphas = outputs[:, 2*self.n_mixtures:] # have to be between 0 and 1! TODO
 
-        print(f"Shapes: mus={mus.shape}, logsigma2s={logsigma2s.shape}, alphas={alphas.shape}")
+        #print(f"Shapes: mus={mus.shape}, logsigma2s={logsigma2s.shape}, alphas={alphas.shape}")
+        #print(f"Alphas: {alphas}")
+        #print(f"Alphas sum -1: {alphas.sum(axis=-1)}")
+        #print(f"Alphas sum 0: {alphas.sum(axis=0)}")
+
         # compute log-gauss for each component
         log_components = -self._neg_log_gauss(x, mus, logsigma2s) + torch.log(alphas)
         neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
 
-        print(f"Shapes: neg_log_likelihood {neg_log_likelihood}")
+        #print(f"Shapes: neg_log_likelihood {neg_log_likelihood}")
 
         return torch.mean(neg_log_likelihood)
 
@@ -379,7 +357,7 @@ class BNN_normal_mixture(BNN):
             self.reset_random()
 
             # extract prediction for each weight sample
-            output = forward(x)
+            output = self.forward(x)
             outputs.append(output)
 
         # dim = (n_monte, batch-size, network-output-dim)
@@ -398,39 +376,27 @@ class BNN_normal_mixture(BNN):
         mean = torch.mean(mean, axis=0)
         return mean
 
-    def mode(self, x, n_monte=50):
+    def mode(self, x, n_monte=50, approximation=True):
         self._compute_predictions(x, n_monte=n_monte)
 
-        # mode is probably mean of Gaussian with stronges
-
-
-        # mean over Monte-Carlo weight samples
-        # TODO: think about if this is a good idea, avergae median?
-        #mode = torch.mean(mode, axis=0)
-        #return mode
-
-        #raise NotImplemented("Not implemented yet! Have to think about how to computed efficiently!")
-
-        # TODO: this is only an approximation
-        norm = self._alphas * 1. / torch.sqrt(2. * np.pi * self._sigma2s)
-        idx = torch.argmax(norm, axis=-1)
-        print(idx.shape, self._mus.shape)
-        mode = self._mus[idx]
-
-        mode = torch.mean(mode, axis=0)
+        if approximation:
+            # TODO: this is only an approximation, think about if this makes sense
+            alphas = torch.mean(self._alphas, axis=0)
+            sigma2s = torch.mean(self._sigma2s, axis=0)
+            mus = torch.mean(self._mus, axis=0)
+            norm = alphas * 1. / torch.sqrt(2. * np.pi * sigma2s)
+            idxs = torch.argmax(norm, axis=-1)
+            print(idxs)
+            mode = mus[(range(len(idxs)), idxs)]
+        else:
+            # TODO
+            raise NotImplementedError("Option is not yet implemented!")
 
         return mode
 
-
     def median(self, x, n_monte=50):
         #aself._compute_predictions(n_monte=n_monte)
-
         raise NotImplemented("Not implemented yet! Have to think about how to computed efficiently!")
-
-        # mean over Monte-Carlo weight samples
-        # TODO: think about if this is a good idea, avergae median?
-        #median = torch.mean(median, axis=0)
-        #return median
 
     def sigma_stoch2(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
@@ -444,7 +410,7 @@ class BNN_normal_mixture(BNN):
         self._compute_predictions(x, n_monte=n_monte)
 
         # TODO: think about it
-        mean = torch.sum(self._mus * self_.alphas, axis=-1)
+        mean = torch.sum(self._mus * self._alphas, axis=-1)
 
         # var over monte-carlo weight samples
         sigma_pred2 = torch.var(mean, axis=0)

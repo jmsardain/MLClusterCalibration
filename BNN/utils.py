@@ -1,37 +1,18 @@
-from vblinear import VBLinear
+#####################################
+### Imports ###
+
 import torch
 from torch import nn
 import numpy as np
-from torch.utils.data import DataLoader, TensorDataset
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
 import os
-import sys
-from collections import defaultdict
-import argparse
-from scipy.stats import norm
 
 #####################################
 ### MPL SETTINGS ###
 
-from matplotlib import rc
-from matplotlib import rcParams
-FONTSIZE=15
+#import matplotlib.pyplot as plt
+#plt.style.use('plotting.mplstyle')
 
-rc('font',**{'family':'serif','serif':['Helvetica'],'size':FONTSIZE})
-rc('text', usetex=True);
-rc('xtick', labelsize=FONTSIZE);
-rc('ytick', labelsize=FONTSIZE)
-rc('text.latex', preamble=r'\usepackage{amsmath}')
-
-rcParams['legend.loc']="upper right"
-rcParams['legend.frameon']=False
-rcParams["errorbar.capsize"] = 8.0
-rcParams['lines.linewidth'] = 2.
-
-
-
-
+####################################
 
 def train_loop(dataloader, model, optimizer, loss_dict):
 
@@ -58,6 +39,7 @@ def train_loop(dataloader, model, optimizer, loss_dict):
 
         pred = model(x)
         mse = torch.pow(pred[:, 0] - y, 2).mean()
+        # TODO: change to Sigma_stoch() instead of pred[:, 1]
         mse_normalized = torch.mean(torch.pow((pred[:, 0] - y), 2) / pred[:, 1].exp())
 
         # save losses for later plotting

@@ -149,7 +149,6 @@ def main():
         type=str,
     )
 
-
     args = parser.parse_args()
 
     ##############################
@@ -157,7 +156,8 @@ def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    redirect_outputs = True
+    redirect_outputs = False
+    n_mixtures_default = 2
 
     ########################################
 
@@ -199,6 +199,7 @@ def main():
     val_dataloader = DataLoader(data_val, batch_size=args.batch_size, shuffle=True)
 
     input_dim = x_train.shape[1]
+    print(f"Number of input features {input_dim}")
 
     ###############################
     # set up neural network for training
@@ -222,7 +223,27 @@ def main():
                 activation_last=args.activation_last
             ).to(device)
 
-        elif args.likelihood.lower() in ["mixturenormal", "mixture-normal", "mixture_normal"]:
+        elif (args.likelihood.lower().startswith("mixturenormal") or
+          args.likelihood.lower().startswith("mixture_normal") or
+          args.likelihood.lower().startswith("mixture-normal")):
+
+            # extract number of gaussian mixtures from input string
+            # e.g.: 'mixturenormal(3)' -> 3
+            likelihood_string = args.likelihood.replace(" ", "") # remove white spave if any
+            if likelihood_string.endswith(")"):
+                digit = args.likelihood[-2]
+                if digit.isdigit():
+                    n_mixtures = int(digit)
+                    print(f"Number of mixture components to be used {n_mixtures}")
+                else:
+                    print(f"Failed to infere number of mixture for Normal mixture from input string!"
+                          f" Given {likelihood_string} -> {digit}"
+                          f" Using default value of {n_mixtures_default}!")
+                    n_mixtures = n_mixtures_default
+            else:
+                print(f"Number of mixture components not specified. Using default value of {n_mixtures_default}")
+                n_mixtures = n_mixtures_default
+
             model = BNN_normal_mixture(
                 args.train_size,
                 args.layer,

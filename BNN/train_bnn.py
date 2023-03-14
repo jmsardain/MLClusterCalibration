@@ -73,6 +73,11 @@ def main():
         type=int
     )
     parser.add_argument(
+        '--test_batch_size',
+        default=8192,
+        type=int
+    )
+    parser.add_argument(
         '--epochs',
         default=50,
         type=int
@@ -190,13 +195,14 @@ def main():
     dataset_test = np.load(args.data_path_test)
     x_test = dataset_test[:args.test_size, 1:]
     y_test = dataset_test[:args.test_size, 0]
-    y_test = torch.from_numpy(y_test).to(device)
-    x_test = torch.from_numpy(x_test).to(device)
+    data_test = np.concatenate([x_test, y_test[:, None]], axis=-1)
+    data_test = torch.from_numpy(data_test).to(device)
     print(f"Test dataset size {y_test.shape[0]}")
 
     # data loaders
     train_dataloader = DataLoader(data_train, batch_size=args.batch_size, shuffle=True)
     val_dataloader = DataLoader(data_val, batch_size=args.batch_size, shuffle=True)
+    test_dataloader = DataLoader(data_test, batch_size=args.test_batch_size, shuffle=False)
 
     input_dim = x_train.shape[1]
     print(f"Number of input features {input_dim}")
@@ -407,56 +413,53 @@ def main():
     ###########################################
     # Evaluate predictions
 
-    x_test = x_test.float()
+    #x_test = x_test.float()
 
-    # TODO: completely rewritea
-    # put into BNN code!
-    if args.bayesian:
+    sigma_stochs, sigma_tots, sigma_preds = [], [], []
+    predictions, y, x_tests = [], [], []
+    for batch, data in enumerate(test_dataloader):
 
-        #    print(f"Evaluating {i+1} of {args.n_monte} predictions")
-        #    model.reset_random()
-        #    y_eval = model(x_test)
-        #    y_eval = y_eval.cpu().detach().numpy()
-        #    output = y_eval[:, 0]
-        #    sigma_stoch = y_eval[:, 1]
-        #    outputs.append(output)
-        #    sigmas2.append(np.exp(sigma_stoch))
+        x_test = data[:, :-1].float()
+        y_test = data[:, -1]
 
-        #outputs = np.stack(outputs, axis=0)
-        #sigmas2 = np.stack(sigmas2, axis=0)
-        #mean = np.mean(outputs, axis=0)
-        #sigma_pred = np.std(outputs, axis=0)
-        #sigma_stoch = np.sqrt(np.mean(sigmas2, axis=0))
-        #sigma_tot = np.sqrt(sigma_pred**2 + sigma_stoch**2)
+        if args.bayesian:
 
-        if args.prediction.lower() == "mean":
-            prediction = model.mean(x_test, args.n_monte).cpu().detach().numpy()
-        elif args.prediction.lower() == "mode":
-            prediction = model.mode(x_test, args.n_monte).cpu().detach().numpy()
-        elif args.prediction.lower() == "median":
-            prediction = model.median(x_test, args.n_monte).cpu().detach().numpy()
+            if args.prediction.lower() == "mean":
+                prediction = model.mean(x_test, args.n_monte).cpu().detach().numpy()
+            elif args.prediction.lower() == "mode":
+                prediction = model.mode(x_test, args.n_monte).cpu().detach().numpy()
+            elif args.prediction.lower() == "median":
+                prediction = model.median(x_test, args.n_monte).cpu().detach().numpy()
+            else:
+                raise NotImplementedError(f"Option for args.prediction not implemented! Given {args.prediction}")
+
+            sigma_stoch = np.sqrt(model.sigma_stoch2(x_test, args.n_monte).cpu().detach().numpy())
+            sigma_pred = np.sqrt(model.sigma_pred2(x_test, args.n_monte).cpu().detach().numpy())
+            sigma_tot = np.sqrt(model.sigma_tot2(x_test, args.n_monte).cpu().detach().numpy())
+
+            # append everything into lists
+            sigma_stochs.append(sigma_stoch)
+            sigma_preds.append(sigma_pred)
+            sigma_tots.append(sigma_tot)
+            predictions.append(prediction)
+
+            # this is a bit useless because we could instead use the original x_test without a data loader
+            # however, this is saver in the case we use a dataloader which shuffles the batches
+            y.append(y_test.cpu().detach().numpy())
+            x_tests.append(x_test.cpu().detach().numpy())
+
         else:
-            raise NotImplementedError(f"Option for args.prediction not implemented! Given {args.prediction}")
+            # TODO: rewrite
+            raise NotImplementedError("Not implemented!")
 
-        sigma_stoch = np.sqrt(model.sigma_stoch2(x_test, args.n_monte).cpu().detach().numpy())
-        sigma_pred = np.sqrt(model.sigma_pred2(x_test, args.n_monte).cpu().detach().numpy())
-        sigma_tot = np.sqrt(model.sigma_tot2(x_test, args.n_monte).cpu().detach().numpy())
+    y = np.concatenate(y)
+    sigma_stoch = np.concatenate(sigma_stochs)
+    sigma_pred = np.concatenate(sigma_preds)
+    sigma_tot = np.concatenate(sigma_tots)
+    prediction = np.concatenate(predictions)
+    x_test = np.concatenate(x_tests)
 
-    else:
-
-        # TODO: rewrite
-        raise NotImplementedError("Not implemented!")
-
-        y_eval = model(x_test)
-        y_eval = y_eval.cpu().detach().numpy()
-        mean = y_eval[:, 0]
-        outputs = mean
-        sigmas2 = np.ones_like(mean)
-        sigma_stoch = np.sqrt(np.exp(y_eval[:, 1]))
-        sigma_pred = np.ones_like(mean)
-        sigma_tot = sigma_stoch
-
-
+    print(sigma_stoch.shape)
 
     print(f"Minimum prediction {np.min(prediction)}")
     print(f"Mean sigma_stoch {np.mean(sigma_stoch)}")
@@ -464,7 +467,7 @@ def main():
     print(f"Mean sigma_tot {np.mean(sigma_tot)}")
 
     # truth label
-    y = y_test.cpu().detach().numpy()
+    #y = y_test.cpu().detach().numpy()
 
     ###########################################
     # create plots
@@ -537,7 +540,7 @@ def main():
         # hardcoding inverse preprocessing
         std_scale = 1.4257378451544638
         mean_scale = 1.6009432921797704
-        energy_log = x_test[:, 0].cpu().detach().numpy() * std_scale + mean_scale
+        energy_log = x_test[:, 0] * std_scale + mean_scale
         energy = np.exp(energy_log)
 
         n = 10000

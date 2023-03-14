@@ -137,17 +137,14 @@ class BNN_normal(BNN):
 
         outputs = []
         for i in range(n_monte):
-            print(f"Evaluating {i+1} of {n_monte} predictions")
-            self.reset_random()
-
             # extract prediction for each weight sample
+            self.reset_random()
             output = self.forward(x)
             outputs.append(output)
 
         # dim = (n_monte, batch-size, network-output-dim)
         outputs = torch.stack(outputs, axis=0)
         self._mean_values = torch.mean(outputs[:, :, 0], axis=0)
-        print(self._mean_values.shape)
         self._sigma_stoch2 = torch.mean(outputs[:, :, 1].exp(), axis=0)
         self._sigma_pred2 = torch.var(outputs[:, :, 0], axis=0)
 
@@ -220,12 +217,8 @@ class BNN_lognormal(BNN):
 
         outputs = []
         for i in range(n_monte):
-            print(f"Evaluating {i+1} of {n_monte} predictions")
             self.reset_random()
-
-            # extract prediction for each weight sample
             output = self.forward(x)
-
             outputs.append(output)
 
         # dim = (n_monte, batch-size, network-output-dim)
@@ -320,22 +313,14 @@ class BNN_normal_mixture(BNN):
 
         outputs = self.forward(x)
 
-        #print(f"Number of mixtures {self.n_mixtures}")
         x = targets[:, None]
         mus = outputs[:, :self.n_mixtures] 
         logsigma2s = outputs[:, self.n_mixtures:self.n_mixtures*2]
         alphas = outputs[:, 2*self.n_mixtures:] # have to be between 0 and 1! TODO
 
-        #print(f"Shapes: mus={mus.shape}, logsigma2s={logsigma2s.shape}, alphas={alphas.shape}")
-        #print(f"Alphas: {alphas}")
-        #print(f"Alphas sum -1: {alphas.sum(axis=-1)}")
-        #print(f"Alphas sum 0: {alphas.sum(axis=0)}")
-
         # compute log-gauss for each component
         log_components = -self._neg_log_gauss(x, mus, logsigma2s) + torch.log(alphas)
         neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
-
-        #print(f"Shapes: neg_log_likelihood {neg_log_likelihood}")
 
         return torch.mean(neg_log_likelihood)
 
@@ -353,10 +338,7 @@ class BNN_normal_mixture(BNN):
 
         outputs = []
         for i in range(n_monte):
-            print(f"Evaluating {i+1} of {n_monte} predictions")
             self.reset_random()
-
-            # extract prediction for each weight sample
             output = self.forward(x)
             outputs.append(output)
 
@@ -386,11 +368,49 @@ class BNN_normal_mixture(BNN):
             mus = torch.mean(self._mus, axis=0)
             norm = alphas * 1. / torch.sqrt(2. * np.pi * sigma2s)
             idxs = torch.argmax(norm, axis=-1)
-            print(idxs)
             mode = mus[(range(len(idxs)), idxs)]
         else:
-            # TODO
+            # TODO: this is not done yet
             raise NotImplementedError("Option is not yet implemented!")
+
+            #self.neg_log_likelihood(x)
+            alphas = torch.mean(self._alphas, axis=0)
+            sigma2s = torch.mean(self._sigma2s, axis=0)
+            mus = torch.mean(self._mus, axis=0)
+
+            # TODO: code dubplication
+            # compute the negative log likelihood and search for mode
+            print(self._mus)
+            print(mus)
+            print(torch.max(mus, axis=-1))
+            #x_min, _ = torch.min(mus, axis=-1)
+            #x_max, _ = torch.max(mus, axis=-1)
+            mean = self.mean(x, n_monte=n_monte)
+            var = self.sigma_stoch2(x, n_monte=n_monte)
+            x_min = mean - 3 * torch.sqrt(var)
+            x_max = mean + 3 * torch.sqrt(var)
+            x_test = []
+            print("shape xmin", x_min.shape)
+            for i in range(x_min.shape[0]):
+                x_test = torch.linspace(x_min[i].item(), x_max[i].item(), 100)
+                log_components = -self._neg_log_gauss(x_test, mus, torch.log(sigma2s)) + torch.log(alphas)
+                print('log comp shape', log_components.shape)
+                neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
+                idxs = torch.argmin(neg_log_likelihood, axis=0)
+                print('idxs shape', idxs.shape)
+                mode = x_test[idxs]
+                print('mode shape', mode.shape)
+                
+            x_test = torch.cat(x_tests)
+            print("Shapes", x_test.shape, mus.shape, sigma2s.shape, alphas.shape)
+            log_components = -self._neg_log_gauss(x_test, mus, torch.log(sigma2s)) + torch.log(alphas)
+            print('log comp shape', log_components.shape)
+            neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
+            print('neg log like shape', neg_log_likelihood.shape)
+            idxs = torch.argmin(neg_log_likelihood, axis=0)
+            print('idxs shape', idxs.shape)
+            mode = x_test[idxs]
+            print('mode shape', mode.shape)
 
         return mode
 
@@ -401,7 +421,13 @@ class BNN_normal_mixture(BNN):
     def sigma_stoch2(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
 
+        # Wikipedia: https://en.wikipedia.org/wiki/Mixture_distribution
+        # variance(mixture) = sum_i var_i * alpha_i + sum_i mu_i^2 * alpha_i + sum_i mu_i * alpha_i
+        #                   = sum_i var_i * alpha_i + sum_i mu_i^2 * alpha_i + mean
         sigma_stoch2 = torch.sum(self._sigma2s * self._alphas, axis=-1)
+        sigma_stoch2 += torch.sum(torch.pow(self._mus, 2) * self._alphas, axis=-1)
+        sigma_stoch2 -= torch.pow(torch.sum(self._mus * self._alphas, axis=-1), 2)
+
         sigma_stoch2 = torch.mean(sigma_stoch2, axis=0)
 
         return sigma_stoch2

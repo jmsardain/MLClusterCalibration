@@ -37,10 +37,12 @@ def train_loop(dataloader, model, optimizer, loss_dict):
         loss.backward()
         optimizer.step()
 
-        pred = model(x)
-        mse = torch.pow(pred[:, 0] - y, 2).mean()
-        # TODO: change to Sigma_stoch() instead of pred[:, 1]
-        mse_normalized = torch.mean(torch.pow((pred[:, 0] - y), 2) / pred[:, 1].exp())
+        # compute separately, this could be removed for efficieny
+        # TODO: implement option to not resample?
+        prediction = model.mean(x, n_monte=1)
+        sigma2 = model.sigma_stoch2(x, n_monte=1)
+        mse = torch.pow(prediction - y, 2).mean()
+        mse_normalized = torch.mean(torch.pow((prediction - y), 2) / sigma2)
 
         # save losses for later plotting
         loss_tot += loss.item()
@@ -84,9 +86,10 @@ def val_pass(dataloader, model, loss_dict):
             kl = model.KL()
             loss = neg_log + kl
 
-            pred = model(x) # inefficient!
-            mse = torch.pow(pred[:, 0] - y, 2).mean()
-            mse_normalized = torch.mean(torch.pow((pred[:, 0] - y), 2) / pred[:, 1].exp())
+            prediction = model.mean(x, n_monte=1) # inefficient!
+            sigma2 = model.sigma_stoch2(x, n_monte=1)
+            mse = torch.pow(prediction - y, 2).mean()
+            mse_normalized = torch.mean(torch.pow((prediction - y), 2) / sigma2)
 
             # save losses for later plotting
             loss_tot += loss.item()

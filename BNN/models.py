@@ -18,7 +18,6 @@ class TanhPlusOne(nn.Module):
     def forward(self, input):
         return tanhone(input) # simply apply already implemented SiLU
 
-
 class BNN(nn.Module):
 
     def __init__(self, training_size, inner_layers, input_dim, activation_inner='tanh', out_dim=2, activation_last=None):
@@ -358,60 +357,54 @@ class BNN_normal_mixture(BNN):
         mean = torch.mean(mean, axis=0)
         return mean
 
-    def mode(self, x, n_monte=50, approximation=True):
+    def mode(self, x, n_monte=50, approximation=False):
         self._compute_predictions(x, n_monte=n_monte)
 
+        # compute average parameters
+        alphas = torch.mean(self._alphas, axis=0)
+        sigma2s = torch.mean(self._sigma2s, axis=0)
+        mus = torch.mean(self._mus, axis=0)
+
         if approximation:
-            # TODO: this is only an approximation, think about if this makes sense
-            alphas = torch.mean(self._alphas, axis=0)
-            sigma2s = torch.mean(self._sigma2s, axis=0)
-            mus = torch.mean(self._mus, axis=0)
+            # check which peak of normal components is the largest:
+            #   peak-height = Normal(x=mu) * alpha
+            #               = 1/sqrt(2 pi sigma^2) * alpha_i
             norm = alphas * 1. / torch.sqrt(2. * np.pi * sigma2s)
             idxs = torch.argmax(norm, axis=-1)
             mode = mus[(range(len(idxs)), idxs)]
         else:
-            # TODO: this is not done yet
-            raise NotImplementedError("Option is not yet implemented!")
+            # numerical method to check for maxima: just evaluate likelihood for set of points and choose largest
 
-            #self.neg_log_likelihood(x)
-            alphas = torch.mean(self._alphas, axis=0)
-            sigma2s = torch.mean(self._sigma2s, axis=0)
-            mus = torch.mean(self._mus, axis=0)
-
-            # TODO: code dubplication
-            # compute the negative log likelihood and search for mode
-            print(self._mus)
-            print(mus)
-            print(torch.max(mus, axis=-1))
-            #x_min, _ = torch.min(mus, axis=-1)
-            #x_max, _ = torch.max(mus, axis=-1)
-            mean = self.mean(x, n_monte=n_monte)
-            var = self.sigma_stoch2(x, n_monte=n_monte)
-            x_min = mean - 3 * torch.sqrt(var)
-            x_max = mean + 3 * torch.sqrt(var)
-            x_test = []
-            print("shape xmin", x_min.shape)
+            # select range to check for maxima
+            x_min, _ = torch.min(mus, axis=-1)
+            x_max, _ = torch.max(mus, axis=-1)
+            x_min *= 0.9
+            x_max*= 1.1
+            
+            # create array of ranges to check for maxima
+            x_tests = []
             for i in range(x_min.shape[0]):
-                x_test = torch.linspace(x_min[i].item(), x_max[i].item(), 100)
-                log_components = -self._neg_log_gauss(x_test, mus, torch.log(sigma2s)) + torch.log(alphas)
-                print('log comp shape', log_components.shape)
-                neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
-                idxs = torch.argmin(neg_log_likelihood, axis=0)
-                print('idxs shape', idxs.shape)
-                mode = x_test[idxs]
-                print('mode shape', mode.shape)
-                
-            x_test = torch.cat(x_tests)
-            print("Shapes", x_test.shape, mus.shape, sigma2s.shape, alphas.shape)
-            log_components = -self._neg_log_gauss(x_test, mus, torch.log(sigma2s)) + torch.log(alphas)
-            print('log comp shape', log_components.shape)
-            neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
-            print('neg log like shape', neg_log_likelihood.shape)
-            idxs = torch.argmin(neg_log_likelihood, axis=0)
-            print('idxs shape', idxs.shape)
-            mode = x_test[idxs]
-            print('mode shape', mode.shape)
+                device = x_min.get_device()
+                x_test = torch.linspace(x_min[i].item(), x_max[i].item(), 1000).to(device)
+                x_tests.append(x_test)
 
+            x_test = torch.stack(x_tests, axis=0)
+
+            # reshape parameters for likelihood computations
+            x_test_reshaped = x_test[:, :, None]
+            mus_reshaped = mus[:, None, :]
+            sigma2s_reshaped = sigma2s[:, None, :]
+            alphas_reshaped = alphas[:, None, :]
+
+            # compute likelihood, TODO: code dubplication
+            log_components = -self._neg_log_gauss(x_test_reshaped, mus_reshaped, torch.log(sigma2s_reshaped))
+            log_components += torch.log(alphas_reshaped)
+            neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
+
+            # choose x-point with largest likelihood value
+            idxs = torch.argmin(neg_log_likelihood, axis=-1)
+            mode = x_test[range(len(idxs)), idxs]
+                
         return mode
 
     def median(self, x, n_monte=50):
@@ -447,9 +440,69 @@ class BNN_normal_mixture(BNN):
         sigma_tot2 = self.sigma_pred2(x, n_monte=n_monte)**2 + self.sigma_stoch2(x, n_monte=n_monte)**2 
         return sigma_tot2
 
-    def distribution(self, x, n_monte=50):
-        # TODO
-        raise NotImplemented("Not yet implemented!")
+    def distributions(self, x_single_event, ax1, ax2, x_range_in_sigma=3, n_monte=50):
+        x_single_event_reshaped = x_single_event[None, :]
+
+        self._compute_predictions(x_single_event_reshaped, n_monte=n_monte)
+        
+        # compute plotting range
+        mean = self.mean(x_single_event_reshaped, n_monte=n_monte)
+        var = self.sigma_stoch2(x_single_event_reshaped, n_monte=n_monte)
+        x_min = mean - x_range_in_sigma * torch.sqrt(var)
+        x_max = mean + (x_range_in_sigma+1) * torch.sqrt(var) # +1 to have more space for the legend
+        device = x_min.get_device()
+        x_test = torch.linspace(x_min.item(), x_max.item(), 1000).to(device)
+
+        # reshape arrays so likelihood computations work
+        x_test_reshaped = x_test[None, :, None]
+        mus_reshaped = self._mus
+        sigma2s_reshaped = self._sigma2s
+        alphas_reshaped = self._alphas
+
+        # compute likelihood
+        log_components = -self._neg_log_gauss(x_test_reshaped, mus_reshaped, torch.log(sigma2s_reshaped))
+        log_components += torch.log(alphas_reshaped)    
+        log_likelihood = torch.logsumexp(log_components, dim=-1)
+        likelihood = torch.exp(log_likelihood)
+
+        # compute mode and mean values for plotting
+        mode_numerical = self.mode(x_single_event_reshaped, n_monte=n_monte, approximation=False)
+        mode_approx = self.mode(x_single_event_reshaped, n_monte=n_monte, approximation=True)
+        mean = self.mean(x_single_event_reshaped, n_monte=n_monte)
+
+        # TODO: can this be done nicer?
+        mode_numerical = mode_numerical.cpu().detach().numpy()
+        mode_approx = mode_approx.cpu().detach().numpy()
+        mean = mean.cpu().detach().numpy()
+
+        # average over Bayesian weight samples
+        likelihood_avg = likelihood.mean(axis=0).cpu().detach().numpy()
+        likelihood_components_avg = torch.exp(log_components).mean(axis=0).cpu().detach().numpy()
+        likelihood = likelihood.cpu().detach().numpy()
+        x_test = x_test.cpu().detach().numpy()
+
+        # draw indivdual weight samples
+        max_draw_plots = np.min([20, likelihood.shape[0]])
+        for i in range(max_draw_plots):
+            if i == 0:
+                ax2.plot(x_test, likelihood[i, :], color="C0", label="Bayesian\nsamples")
+            else:
+                ax2.plot(x_test, likelihood[i, :], color="C0")
+
+        # plot bayesian averaged distributions
+        ax1.plot(x_test, likelihood_avg, color="C1", label="Mixture")
+        for i in range(likelihood_components_avg.shape[-1]):
+            if i == 0:
+                ax1.plot(x_test, likelihood_components_avg[:, i], color="C2", label=" Comp.")
+            else:
+                ax1.plot(x_test, likelihood_components_avg[:, i], color="C2") # without label
+
+        # plot mode and mean
+        ax2.axvline(mode_numerical, label="Mode\n(num.)", linestyle="-", color="C3")
+        ax2.axvline(mode_approx, label="Mode\n(approx.)", linestyle=":", color="C3")
+        ax2.axvline(mean, label="Mean", linestyle="-", color="C4")
+
+        return x_test, likelihood
 
 
 # TODO: this has to be rewritten

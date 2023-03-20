@@ -413,7 +413,8 @@ def main():
     ###########################################
     # Evaluate predictions
 
-    #x_test = x_test.float()
+    selected_idx = 4
+    x_dist, y_dist = None, None
 
     sigma_stochs, sigma_tots, sigma_preds = [], [], []
     predictions, y, x_tests = [], [], []
@@ -427,7 +428,7 @@ def main():
             if args.prediction.lower() == "mean":
                 prediction = model.mean(x_test, args.n_monte).cpu().detach().numpy()
             elif args.prediction.lower() == "mode":
-                prediction = model.mode(x_test, args.n_monte).cpu().detach().numpy()
+                prediction = model.mode(x_test, args.n_monte, approximation=False).cpu().detach().numpy()
             elif args.prediction.lower() == "median":
                 prediction = model.median(x_test, args.n_monte).cpu().detach().numpy()
             else:
@@ -459,15 +460,57 @@ def main():
     prediction = np.concatenate(predictions)
     x_test = np.concatenate(x_tests)
 
-    print(sigma_stoch.shape)
-
     print(f"Minimum prediction {np.min(prediction)}")
     print(f"Mean sigma_stoch {np.mean(sigma_stoch)}")
     print(f"Mean sigma_pred {np.mean(sigma_pred)}")
     print(f"Mean sigma_tot {np.mean(sigma_tot)}")
 
-    # truth label
-    #y = y_test.cpu().detach().numpy()
+    ########################################################
+
+
+    # draw individual predictions
+    # TODO: implement for other distributions as well
+    num_draw = 20
+    plot_path_distributions = dir_path + "/" + "full_distribution_examples.pdf"
+    if args.bayesian:
+        if (args.likelihood.lower().startswith("mixturenormal") or
+          args.likelihood.lower().startswith("mixture_normal") or
+          args.likelihood.lower().startswith("mixture-normal")):
+
+            # get one batch of test data
+            data = next(iter(test_dataloader))
+            x_one_batch = data[:, :-1].float()
+            y_one_batch = data[:, -1]
+
+            # select random indices
+            idxs = np.arange(0, len(x_one_batch), 1)
+            np.random.shuffle(idxs)
+            idxs = idxs[:num_draw]
+
+            with PdfPages(plot_path_distributions) as pdf:
+                for i, idx in enumerate(idxs):
+                    print(f"Drawing full distribution for index {idx} ({i+1}/{len(idxs)})")
+                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=[5.5*2, 5])
+
+                    # draw single distribution
+                    # could be parallized. However, plotting has to be done non-parallel anyway
+                    _, _ = model.distributions(x_one_batch[idx], ax1, ax2)
+
+                    y_single_event = y_one_batch[idx].cpu().detach().numpy()
+                    ax1.axvline(y_single_event, linestyle=":", color="black", label="True R")
+                    ax1.set_xlabel("R")
+                    ax1.set_ylabel("Normalized")
+                    ax1.legend(frameon=False)
+
+                    ax2.axvline(y_single_event, linestyle=":", color="black", label="True R")
+                    ax2.set_xlabel("R")
+                    ax2.set_ylabel("Normalized")
+                    ax2.legend(frameon=False)
+
+                    pdf.savefig(fig, bbox_inches='tight')
+                    plt.close(fig)
+
+                print(f"Saved into {plot_path_distributions}!")
 
     ###########################################
     # create plots
@@ -494,6 +537,21 @@ def main():
         mse_norm_i_v3 = remove_nans_and_inf(mse_norm_i_v3, replace_value=None)
 
         #######################
+        if (x_dist is not None) and (y_dist is not None):
+
+            fig = plt.figure(figsize=[5.5, 5])
+            ax = fig.add_subplot(1, 1, 1)
+            max_draw_plots = np.min([20, y_dist.shape[0]])
+            for i in range(max_draw_plots):
+                ax.plot(x_dist, y_dist[i, :], color="C0")
+            ax.axvline(y_dist_truth, linestyle=":", color="black", label="true Response")
+            ax.set_xlabel("R")
+            ax.set_ylabel("Normalized")
+            ax.legend(frameon=False, loc="upper right")
+            pdf.savefig(fig, bbox_inches='tight')
+            plt.close(fig)
+
+
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
         #xlim = [np.min(y), np.max(y)]

@@ -1,3 +1,31 @@
+''' Implementation of (Bayesian) Neural networks classes.
+
+There is a standard BNN class and several classes build on top of it
+for different types of regression. The main logic for Bayesian neural
+networks can be found in vblinear.py. The Bayesian neural networks
+implemented here are variational mean-field BNNs. The main assumption
+is that the variational distribution (distribution over weights) is a
+product of independent Gaussian distributions which is also referred to
+as the mean-field approximation.
+
+The interpretation of the BNN output is bound to the loss function
+(likelihood) chosen for training.
+For instance, if using a normal likelihood, the first output of the
+BNN represent the mean value and the second output represent the
+logarithm of the Gaussian width. To make it easier to extract the
+correct prediction for a specific likelihood function, there are
+several subclasses build on top of the BNN class, each connected
+with a certain likelihood.
+The different types are:
+    - BNN_normal: BNN for regression using a normal likelihood
+    - BNN_normal_mixture: BNN for regression with normal mixture likelihood.
+         Number of mixtures can be choosen.
+    - BNN_log_normal: BNN for regression with log-normal likelihood.
+
+@athors = Michel Luchmann, 
+          Jad Mathieu Sardain
+'''
+
 #########################################
 ### Imports ###
 
@@ -19,6 +47,46 @@ class TanhPlusOne(nn.Module):
         return tanhone(input) # simply apply already implemented SiLU
 
 class BNN(nn.Module):
+    '''Standard BNN class.
+    This class only comes with the KL() method which has to be added to the loss
+    function. It doesn't have a log_likelihood method like the other BNN subclasses.
+    Thus, the loss function has to be constructed outside like in the following
+    use case example:
+
+    Code exmaple for training:
+        model = BNN(...)
+        model.train()
+        for input, labels in dataloader:
+            prediction = model(input)
+
+            # loss_function = negative log-likelihood
+            loss = loss_function(prediction, labels)
+            loss += model.KL()
+
+            loss.backward()
+            optimizer.step()
+
+    Code example for testing phase:
+        num_weight_samples = 50
+        for i in range(num_weight_samples):
+            model.reset_random()
+            prediction = model(input)
+        
+        torch.mean(prediction, axis=0)
+
+    @Args:
+        training_size = total number of traning examples (NOT batch size).
+            Needed for correct prefactor for KL-divergence
+        inner_layers = list of integers to represent number of nodes per layer.
+            E.g. [64, 64, 32] -> 3 inner layers with nodes 64, 64 and 32
+        input_dim = number of features/dimensions of network input. Shape of input data is
+            (batch_size, input_dim)
+        activation_inner = activation function of inner layers. Currently implemented are:
+            tanh, relu, softplus
+        out_dim = number of output dimensions
+        activaton_last = optional activation function for last layer. Only applied to first
+            output dimension. First output dimension is usually asscociated with the mean prediction.
+    '''
 
     def __init__(self, training_size, inner_layers, input_dim, activation_inner='tanh', out_dim=2, activation_last=None):
         super(BNN, self).__init__()
@@ -28,10 +96,11 @@ class BNN(nn.Module):
         self.all_layers = []
         self.vb_layers = []
 
-        # add first and last layer
+        # add first and last layer to list with all layers
         inner_layers = [input_dim] + inner_layers
         inner_layers.append(out_dim)
 
+        # construct all layers
         for i in range(len(inner_layers)-1):
             vb_layer = VBLinear(inner_layers[i], inner_layers[i+1])
             self.vb_layers.append(vb_layer)
@@ -45,10 +114,11 @@ class BNN(nn.Module):
                 elif activation_inner.lower() == "softplus":
                     self.all_layers.append(nn.Softplus())
                 else:
-                    raise NotImplementedError("Option for activation function of inner layers is not implemented! Given: {}".format(
+                    raise NotImplementedError(
+                        "Option for activation function of inner layers is not implemented! Given: {}".format(
                         activation_inner))
 
-        # last layer activation function
+        # set layer activation function
         self.last_activation = None
         if activation_last is not None:
             if activation_last.lower() == "tanh":
@@ -60,37 +130,38 @@ class BNN(nn.Module):
             elif activation_last.lower() == "none":
                  self.last_activation = None
             else:
-                raise NotImplementedError("Option for lactivation function of last layer is not implemented! Given {}".format(
+                raise NotImplementedError(
+                    "Option for lactivation function of last layer is not implemented! Given {}".format(
                     activation_last))
 
         self.model = nn.Sequential(*self.all_layers)
 
-    # TODO: do we need this?
-    def set_num_training(self, training_size):
-        self.training_size = training_size
-
     def forward(self, x):
         y = self.model(x)
-        y0, y1 = y[:, 0], y[:, 1]
         if self.last_activation is not None:
+            y0, y1 = y[:, 0:1], y[:, 1:]
             y0 = self.last_activation(y0)
-        return torch.stack((y0, y1), axis=1)
+            return torch.cat((y0, y1), axis=1)
+        else:
+            return y
 
     def set_map(self, map):
+        '''MAP=Maximum A Posteriori -> Set each weight to its mean-value, turns off weights
+            sampling.
+            @args: map = boolean, True -> use MAP method for computing predictions
+        '''
         for vb_layer in self.vb_layers:
             vb_layer.map = map
 
     def reset_random(self):
-        '''
-        reset random values used to sample network weights in each layer
+        ''' Reset random values used to sample network weights in each layer.
         '''
         for layer in self.vb_layers:
             layer.reset_random()
         return
 
     def KL(self):
-        '''
-        return KL Loss summed from each layer
+        ''' Return total KL-divergence.
         '''
 
         kl = 0
@@ -102,6 +173,41 @@ class BNN(nn.Module):
 # TODO: make all of this more efficient:
 # only call _compute_predictions once!
 class BNN_normal(BNN):
+    '''BNN class specific for regression using a normal / Gaussian likelihood.
+       Output of BNN is 2 dimensional. First component is mean value of
+       a Normal distribution and second output is log(sigma^2).
+
+       Loss function can be constructed by calling the two methods 
+       neg_log_likelihood() and KL() or by just calling total_loss().
+       E.g.:
+            model = BNN_normal()
+            for input, label in dataloader:
+                neg_log_likelihood = model.neg_log_likelihood(x, y)
+                kl = model.KL()
+                loss = neg_log_likelihood + kl
+                loss.backward()
+                optimizer.step()
+
+       Use Mean / Mode / Meadian method to compute predictions for given input vector x.
+       E.g.:
+            model = BNN_normal()
+            ...
+            model.Mean(input_test_data, n_monte=50)
+       In the Gaussian case all of these methods result into the same output.
+
+       Uncertainty outputs can be extracted by calling:
+            - sigma_stoch2: averaged Gaussian variance. Also referred to as aleatoric uncertainty.
+                Formula: E_{q(omega)} (Var) with q(omega) being the variational distribution.
+                Should capture noise on labels and input data.
+            - sigma_pred2: uncertainty extracted from weight sampling (epistemic uncertainty). 
+                Specific to Bayesian neural networks.
+                Formula: Var_{q(omega)} (Mean) with q(omega) being the variational distribution.
+                Should be highly training size dependent. Captures statistical limitations
+                of trainin data.
+
+       @Args:
+            See BNN class
+    '''
 
     def __init__(self, training_size, inner_layers, input_dim, activation_inner='tanh', activation_last=None):
         super(BNN_normal, self).__init__(
@@ -119,7 +225,6 @@ class BNN_normal(BNN):
         self._sigma_pred2 = None
 
     def neg_log_likelihood(self, x, targets):
-
         outputs = self.forward(x)
         mu = outputs[:, 0]
         logsigma2 = outputs[:, 1]
@@ -180,6 +285,50 @@ class BNN_normal(BNN):
 # TODO: make all of this more efficient:
 # only call _compute_predictions once!
 class BNN_lognormal(BNN):
+    '''BNN class specific for regression using a log-normal likelihood.
+       Output of BNN is 2 dimensional. First component is the mu parameter
+       and the second output is the log(sigma^2) parameter. Be careful, we use
+       the standard parameterization. These parameters don't have the
+       interpretation of the mean and the variance of the log-normal
+       distribution. These parameter represent the mean and the variance
+       in 'log-space'. For more information look into [1]. There is a table
+       explaining the connection between these parameters and the moments
+       of the log-normal distribution.
+
+       Loss function can be constructed by calling the two methods 
+       neg_log_likelihood() and KL() or by just calling total_loss().
+       E.g.:
+            model = BNN_lognormal()
+            for input, label in dataloader:
+                neg_log_likelihood = model.neg_log_likelihood(x, y)
+                kl = model.KL()
+                loss = neg_log_likelihood + kl
+                loss.backward()
+                optimizer.step()
+
+       Use Mean / Mode / Meadian method to compute predictions for given input vector x.
+       E.g.:
+            model = BNN_lognormal()
+            ...
+            model.Mean(input_test_data, n_monte=50)
+       Be careful, in the log-normal these methods result into different predictions.
+
+       Uncertainty outputs can be extracted by calling:
+            - sigma_stoch2: averaged variance. Also referred to as aleatoric uncertainty.
+                Formula: E_{q(omega)} (Var) with q(omega) being the variational distribution.
+                Should capture noise on labels and input data.
+            - sigma_pred2: uncertainty extracted from weight sampling (epistemic uncertainty). 
+                Specific to Bayesian neural networks.
+                Formula: Var_{q(omega)} (Mean) with q(omega) being the variational distribution.
+                Should be highly training size dependent. Captures statistical limitations
+                of trainin data.
+
+        [1]: https://en.wikipedia.org/wiki/Log-normal_distribution
+
+       @Args:
+            See BNN class
+    '''
+
 
     def __init__(self, training_size, inner_layers, input_dim, activation_inner='tanh', activation_last=None):
         super(BNN_lognormal, self).__init__(
@@ -228,6 +377,8 @@ class BNN_lognormal(BNN):
 
     def mean(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
+
+        # https://en.wikipedia.org/wiki/Log-normal_distribution
         mean = torch.exp(self._mu + self._sigma2 / 2.)
 
         # mean over Monte-Carlo weight samples
@@ -236,11 +387,12 @@ class BNN_lognormal(BNN):
 
     def mode(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
+
         # https://en.wikipedia.org/wiki/Log-normal_distribution
         mode = torch.exp(self._mu - self._sigma2)
 
+        # TODO: This is in principle not correct to do, only an approximation for narrow q(omega)
         # mean over Monte-Carlo weight samples
-        # TODO: think about if this is a good idea, avergae median?
         mode = torch.mean(mode, axis=0)
         return mode
 
@@ -249,8 +401,7 @@ class BNN_lognormal(BNN):
         # https://en.wikipedia.org/wiki/Log-normal_distribution
         median = torch.exp(self._mu)
 
-        # mean over Monte-Carlo weight samples
-        # TODO: think about if this is a good idea, avergae median?
+        # TODO: This is in principle not correct to do, only an approximation for narrow q(omega)
         median = torch.mean(median, axis=0)
         return median
 
@@ -284,8 +435,56 @@ class BNN_lognormal(BNN):
 # TODO: make all of this more efficient:
 # only call _compute_predictions once!
 class BNN_normal_mixture(BNN):
+    '''BNN class specific for regression using a normal mixture likelihood.
+       Output of BNN is (num_mixtures * 3) dimensional:
+            out = BNN_normal_mixture(input)
+            mus = out[:n_mixtures]
+            sigma2s = out[n_mixtures:2*n_mixtures]
+            alphas = out[n_mixtures*2:]
+
+            where the PDF is given by:
+            Normal-Mixture = Sum_i alphas[i] * Normal(mus[i], sigmas[i])
+
+       Loss function can be constructed by calling the two methods 
+       neg_log_likelihood() and KL() or by just calling total_loss().
+       E.g.:
+            model = BNN_normal_mixture(n_mixtures=3)
+            for input, label in dataloader:
+                neg_log_likelihood = model.neg_log_likelihood(x, y)
+                kl = model.KL()
+                loss = neg_log_likelihood + kl
+                loss.backward()
+                optimizer.step()
+
+       Use Mean / Mode / Meadian method to compute predictions for given input vector x.
+       E.g.:
+            model = BNN_normal_mixture()
+            ...
+            model.Mean(input_test_data, n_monte=50)
+       Be careful, in a normal mixture model these methods result into different predictions.
+
+       Uncertainty outputs can be extracted by calling:
+            - sigma_stoch2: averaged variance. Also referred to as aleatoric uncertainty.
+                Formula: E_{q(omega)} (Var) with q(omega) being the variational distribution.
+                Should capture noise on labels and input data.
+            - sigma_pred2: uncertainty extracted from weight sampling (epistemic uncertainty). 
+                Specific to Bayesian neural networks.
+                Formula: Var_{q(omega)} (Mean) with q(omega) being the variational distribution.
+                Should be highly training size dependent. Captures statistical limitations
+                of trainin data.
+
+        [1]: https://en.wikipedia.org/wiki/Log-normal_distribution
+
+       @Args:
+            See BNN class,
+            n_mixtures = Number of normal distributions to construct mixture distribution with.
+    '''
 
     def __init__(self, training_size, inner_layers, input_dim, activation_inner='tanh', n_mixtures=3, activation_last=None):
+
+        # not needed here
+        del activation_last
+
         super(BNN_normal_mixture, self).__init__(
             training_size,
             inner_layers,
@@ -301,7 +500,6 @@ class BNN_normal_mixture(BNN):
         self._sigma2s = None
         self._alphas = None
 
-    # overwrite, this is not nice, TODO
     def forward(self, x):
         y = self.model(x)
         y, alphas = y[:, :self.n_mixtures*2], y[:, self.n_mixtures*2:]
@@ -317,7 +515,11 @@ class BNN_normal_mixture(BNN):
         logsigma2s = outputs[:, self.n_mixtures:self.n_mixtures*2]
         alphas = outputs[:, 2*self.n_mixtures:] # have to be between 0 and 1! TODO
 
-        # compute log-gauss for each component
+        # likelihood is computed as:
+        # -log(likelihood) = -log(sum_i Exp( log(Normal(mu_i, sigma_i)) + log(alpha_i))).
+        # This construction uses the logsumexp method from pytorch which is numerically
+        # more stable then just computing: 
+        # -log(likelihood) = -log(sum_i alpha_i * Normal(mu_i, sigma_i) )
         log_components = -self._neg_log_gauss(x, mus, logsigma2s) + torch.log(alphas)
         neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
 
@@ -351,6 +553,7 @@ class BNN_normal_mixture(BNN):
     def mean(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
 
+        # mean of mixture distribution is given by weighted mean of each individual dist
         mean = torch.sum(self._mus * self._alphas, axis=-1)
 
         # mean over monte-carlo weight samples
@@ -360,6 +563,8 @@ class BNN_normal_mixture(BNN):
     def mode(self, x, n_monte=50, approximation=False):
         self._compute_predictions(x, n_monte=n_monte)
 
+        # First computing the Bayesian average is actually only an approximation
+        # TODO: Is there a better alternative?
         # compute average parameters
         alphas = torch.mean(self._alphas, axis=0)
         sigma2s = torch.mean(self._sigma2s, axis=0)
@@ -414,6 +619,7 @@ class BNN_normal_mixture(BNN):
     def sigma_stoch2(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
 
+        # Variance of a mixture model:
         # Wikipedia: https://en.wikipedia.org/wiki/Mixture_distribution
         # variance(mixture) = sum_i var_i * alpha_i + sum_i mu_i^2 * alpha_i + sum_i mu_i * alpha_i
         #                   = sum_i var_i * alpha_i + sum_i mu_i^2 * alpha_i + mean
@@ -428,9 +634,8 @@ class BNN_normal_mixture(BNN):
     def sigma_pred2(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
 
-        # TODO: think about it
+        # mean of mixture distribution is given by weighted mean of each individual dist
         mean = torch.sum(self._mus * self._alphas, axis=-1)
-
         # var over monte-carlo weight samples
         sigma_pred2 = torch.var(mean, axis=0)
 
@@ -441,6 +646,16 @@ class BNN_normal_mixture(BNN):
         return sigma_tot2
 
     def distributions(self, x_single_event, ax1, ax2, x_range_in_sigma=3, n_monte=50):
+        '''Draw for a single input data point the full predicted distribtuions.
+
+        @args:
+            'x_single_event': single data point to draw distribution for. Should have dimensions
+                x_single_event.shape = (n_features)
+            ax1, ax2: matpltolib.axes objects to draw distributions into
+            x_range_in_sigma: x-axis range given in Standard deviatons of the distribution,
+                e.g. x_range_in_sigma = 3 -> Draws distribution in range[mean - 3*std, mean + (3+1)*sigma].
+                There is more space to the right side for a possible legend.
+        '''
         x_single_event_reshaped = x_single_event[None, :]
 
         self._compute_predictions(x_single_event_reshaped, n_monte=n_monte)

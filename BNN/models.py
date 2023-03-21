@@ -1,4 +1,4 @@
-''' Implementation of (Bayesian) Neural networks classes.
+''' Implementation of (Bayesian) Neural networks.
 
 There is a standard BNN class and several classes build on top of it
 for different types of regression. The main logic for Bayesian neural
@@ -220,25 +220,30 @@ class BNN_normal(BNN):
             activation_last=activation_last
         )
 
-        self._mean_values = None
-        self._sigma_stoch2 = None
-        self._sigma_pred2 = None
+        self._mus = None
+        self._sigma2s = None
 
     def neg_log_likelihood(self, x, targets):
+        ''' Computes average negative log likelihood:
+            -log likelihood = 1/M sum_i -log p(y_i | x_i)
+            @args:
+                x: input data for neural network
+                targets: training labels
+        '''
+
+        # evaluate network outputs
         outputs = self.forward(x)
         mu = outputs[:, 0]
-        logsigma2 = outputs[:, 1]
+        log_sigma2 = outputs[:, 1]
 
-        out = torch.pow(mu - targets, 2) / (2 * logsigma2.exp()) + 1./2. * logsigma2
-        out += 1./2.*np.log(2.*np.pi) # let's add constant to get proper neg log likelihood
-        return torch.mean(out)
+        neg_log_prob = -self._log_prob_func(targets, mu, log_sigma2)
+        return torch.mean(neg_log_prob) # mean over batch of data
 
     def total_loss(self, x, targets):
         loss = neg_log_likelihood(x, targets) + self.KL()
         return loss
 
     def _compute_predictions(self, x, n_monte=50):
-
         outputs = []
         for i in range(n_monte):
             # extract prediction for each weight sample
@@ -248,42 +253,132 @@ class BNN_normal(BNN):
 
         # dim = (n_monte, batch-size, network-output-dim)
         outputs = torch.stack(outputs, axis=0)
-        self._mean_values = torch.mean(outputs[:, :, 0], axis=0)
-        self._sigma_stoch2 = torch.mean(outputs[:, :, 1].exp(), axis=0)
-        self._sigma_pred2 = torch.var(outputs[:, :, 0], axis=0)
+        self._mus = outputs[:, :, 0]
+        self._sigma2s = outputs[:, :, 1].exp()
+
+    def log_probs(self, y_evaluate, x, n_monte=50):
+        '''Computes log_probability for each input data point x and label y_evaluated
+        The BNN predicts p(y | x) per event. The log-liklihood is given by:
+            log_likelihood = sum_i log( p(y_i | x_i) )
+        This method evaluates instead:
+            log_probs_{i, j} = log p(y_i | x_j)
+        So x and y can be choosen independenlty. The output tensor has one more dimension 
+        because no explicit sum over the weight samples is performed:
+
+        @args:
+            y_evaluate: 1d array with label values
+            x: 1d array with input point values, can have different length then y_evaluate
+            n_monte: number of weight samples
+        @returns:
+            log_probs tensor with shape (len(y_evaluate), n_monte, len(x))
+        '''
+
+        self._compute_predictions(x, n_monte=n_monte)
+
+        # self._mus.shape = (n_monte, len(x))
+        mu_reshaped = self._mus[None, :, :]
+        log_sigma2_reshaped = torch.log(self._sigma2s[None, :, :])
+        y_evaluate_reshaped = y_evaluate[:, None, None]
+
+        log_probs = self._log_prob_func(y_evaluate_reshaped, mu_reshaped, log_sigma2_reshaped)
+
+        # log_probs.shape = (len(y_evaluate), n_monte, len(x))
+        return log_probs
+
+    def _log_prob_func(self, x, mu, log_sigma2):
+        ''' Logarithm of probability density of normal distribution:
+            log N_{mu, sigma2}(x)
+        '''
+        neg_log_probs = torch.pow(x - mu, 2) / (2 * log_sigma2.exp()) 
+        neg_log_probs += 1./2.*log_sigma2
+        neg_log_probs += 1./2.*np.log(2.*np.pi)
+        return -neg_log_probs
 
     def mean(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
-        return self._mean_values
+        # mean over weight samples
+        mean = torch.mean(self._mus, axis=0)
+        return mean
 
     def mode(self, x, n_monte=50):
-        self._compute_predictions(x, n_monte=n_monte)
-        return self._mean_values
+        return self.mean(x, n_monte=n_monte)
 
     def median(self, x, n_monte=50):
-        self._compute_predictions(x, n_monte=n_monte)
-        return self._mean_values
+        return self.mean(x, n_monte=n_monte)
 
     def sigma_stoch2(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
-        return self._sigma_stoch2
+        # mean over weight samples
+        sigma_stoch2 = torch.mean(self._sigma2s, axis=0)
+        return sigma_stoch2
 
     def sigma_pred2(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
-        return self._sigma_pred2
+        sigma_pred2 = torch.var(self._mus, axis=0)
+        return sigma_pred2
 
     def sigma_tot2(self, x, n_monte=50):
-        self._compute_predictions(x, n_monte=n_monte)
-        sigma_tot2 = self._sigma_pred2**2 + self._sigma_stoch2**2
-        return sigma_tot2
+        # inefficient, but who cares
+        return self.sigma_pred2(x, n_monte=n_monte) + self.sigma_stoch2(x, n_monte=n_monte)
 
-    def distribution(self, x, n_monte=50):
-        # TODO
-        raise NotImplemented("Not yet implemented!")
+    def draw_distribution(self, x_single_event, ax1, ax2, x_range_in_sigma=3, n_monte=50):
+        '''Draw for a single input data point the full predicted distribtuion.
+
+        @args:
+            'x_single_event': single data point to draw distribution for. Should have dimensions
+                x_single_event.shape = (n_features)
+            ax1, ax2: matpltolib.axes objects to draw distributions into
+            x_range_in_sigma: x-axis range given in Standard deviatons of the distribution,
+                e.g. x_range_in_sigma = 3 -> Draws distribution in range[mean - 3*std, mean + (3+1)*sigma].
+                There is more space to the right side for a possible legend.
+        '''
+        x_single_event_reshaped = x_single_event[None, :]
+
+        # compute plotting range
+        mean = self.mean(x_single_event_reshaped, n_monte=n_monte)
+        var = self.sigma_stoch2(x_single_event_reshaped, n_monte=n_monte)
+        x_min = mean - x_range_in_sigma * torch.sqrt(var)
+        x_max = mean + (x_range_in_sigma+1) * torch.sqrt(var) # +1 to have more space for the legend
+        device = x_min.get_device()
+        x_test = torch.linspace(x_min.item(), x_max.item(), 1000).to(device)
+
+        # reshape arrays so likelihood computations work
+        self._compute_predictions(x_single_event_reshaped, n_monte=n_monte)
+        x_test_reshaped = x_test[None, :]
+        mus_reshaped = self._mus            # shape = (n_monte, 1)
+        sigma2s_reshaped = self._sigma2s    # shape = (n_monte, 1)
+
+        # compute likelihood
+        log_prob = self._log_prob_func(x_test_reshaped, mus_reshaped, torch.log(sigma2s_reshaped))
+        likelihood = torch.exp(log_prob)
+
+        # compute mean
+        mean = self.mean(x_single_event_reshaped, n_monte=n_monte)
+        mean = mean.cpu().detach().numpy()
+
+        # average over Bayesian weight samples
+        likelihood_avg = likelihood.mean(axis=0).cpu().detach().numpy()
+        likelihood = likelihood.cpu().detach().numpy()
+        x_test = x_test.cpu().detach().numpy()
+
+        # draw indivdual weight samples
+        max_draw_plots = np.min([20, likelihood.shape[0]])
+        for i in range(max_draw_plots):
+            if i == 0:
+                ax2.plot(x_test, likelihood[i, :], color="C0", label="Bayesian\nsamples")
+            else:
+                ax2.plot(x_test, likelihood[i, :], color="C0")
+
+        # plot bayesian averaged distributions
+        ax1.plot(x_test, likelihood_avg, color="C1", label="Average")
+
+        # plot mean
+        ax2.axvline(mean, label="Mean", linestyle="-", color="C4")
+        ax1.axvline(mean, label="Mean", linestyle="-", color="C4")
+
+        return x_test, likelihood
 
 
-# TODO: make all of this more efficient:
-# only call _compute_predictions once!
 class BNN_lognormal(BNN):
     '''BNN class specific for regression using a log-normal likelihood.
        Output of BNN is 2 dimensional. First component is the mu parameter
@@ -329,7 +424,6 @@ class BNN_lognormal(BNN):
             See BNN class
     '''
 
-
     def __init__(self, training_size, inner_layers, input_dim, activation_inner='tanh', activation_last=None):
         super(BNN_lognormal, self).__init__(
             training_size,
@@ -340,22 +434,24 @@ class BNN_lognormal(BNN):
             activation_last=activation_last
         )
 
-        self._mu = None
-        self._sigma2 = None
+        self._mus = None
+        self._sigma2s = None
 
     def neg_log_likelihood(self, x, targets):
+        ''' Computes average negative log likelihood:
+            -log likelihood = 1/M sum_i -log p(y_i | x_i)
+            @args:
+                x: input data for neural network
+                targets: training labels
+        '''
 
+        # compute outputs
         outputs = self.forward(x)
         mu = outputs[:, 0]
-        logsigma2 = outputs[:, 1]
+        log_sigma2 = outputs[:, 1]
 
-        # parameterization of a log-normal via mu and logsigma2
-        # IMPORTANT: mu and sigma are not equivalent to Mean() and Std() of a log-normal
-        out = torch.pow(torch.log(targets) - mu, 2) / (2 * logsigma2.exp()) 
-        out += 1./2.*logsigma2 + torch.log(targets) 
-        out += 1./2.*np.log(2.*np.pi)
-
-        return torch.mean(out)
+        neg_log_prob = -self._log_prob_func(targets, mu, log_sigma2)
+        return torch.mean(neg_log_prob) # mean over batch of data
 
     def total_loss(self, x, targets):
         loss = neg_log_likelihood(x, targets) + self.KL()
@@ -369,17 +465,27 @@ class BNN_lognormal(BNN):
             output = self.forward(x)
             outputs.append(output)
 
-        # dim = (n_monte, batch-size, network-output-dim)
+        # outputs.shape = (n_monte, batch-size, network-output-dim)
         outputs = torch.stack(outputs, axis=0)
+        self._mus = outputs[:, :, 0]
+        self._sigma2s = outputs[:, :, 1].exp()
 
-        self._mu = outputs[:, :, 0]
-        self._sigma2 = outputs[:, :, 1].exp()
+    def _log_prob_func(self, x, mu, log_sigma2):
+        ''' Logarithm of probability density of log-normal distribution:
+            log f_{mu, sigma2}(x) with f = density of a log-normal dist
+        '''
+        # parameterization of a log-normal via mu and logsigma2
+        # IMPORTANT: mu and sigma are not equivalent to Mean() and Std() of a log-normal
+        neg_log_prob = torch.pow(torch.log(x) - mu, 2) / (2 * log_sigma2.exp()) 
+        neg_log_prob += 1./2.*log_sigma2 + torch.log(x) 
+        neg_log_prob += 1./2.*np.log(2.*np.pi)
+        return -neg_log_prob
 
     def mean(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
 
         # https://en.wikipedia.org/wiki/Log-normal_distribution
-        mean = torch.exp(self._mu + self._sigma2 / 2.)
+        mean = torch.exp(self._mus + self._sigma2s / 2.)
 
         # mean over Monte-Carlo weight samples
         mean = torch.mean(mean, axis=0)
@@ -389,7 +495,7 @@ class BNN_lognormal(BNN):
         self._compute_predictions(x, n_monte=n_monte)
 
         # https://en.wikipedia.org/wiki/Log-normal_distribution
-        mode = torch.exp(self._mu - self._sigma2)
+        mode = torch.exp(self._mus - self._sigma2s)
 
         # TODO: This is in principle not correct to do, only an approximation for narrow q(omega)
         # mean over Monte-Carlo weight samples
@@ -399,18 +505,47 @@ class BNN_lognormal(BNN):
     def median(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
         # https://en.wikipedia.org/wiki/Log-normal_distribution
-        median = torch.exp(self._mu)
+        median = torch.exp(self._mus)
 
         # TODO: This is in principle not correct to do, only an approximation for narrow q(omega)
         median = torch.mean(median, axis=0)
         return median
+
+    def log_probs(self, y_evaluate, x, n_monte=50):
+        '''Computes log_probability for each input data point x and label y_evaluated
+        The BNN predicts p(y | x) per event. The log-liklihood is given by:
+            log_likelihood = sum_i log( p(y_i | x_i) )
+        This method evaluates instead:
+            log_probs_{i, j} = log p(y_i | x_j)
+        So x and y can be choosen independenlty. The output tensor has one more dimension 
+        because no explicit sum over the weight samples is performed:
+
+        @args:
+            y_evaluate: 1d array with label values
+            x: 1d array with input point values, can have different length then y_evaluate
+            n_monte: number of weight samples
+        @returns:
+            log_probs tensor with shape (len(y_evaluate), n_monte, len(x))
+        '''
+
+        self._compute_predictions(x, n_monte=n_monte)
+
+        # self._mus.shape = (n_monte, len(x))
+        mu_reshaped = self._mus[None, :, :]
+        log_sigma2_reshaped = torch.log(self._sigma2s[None, :, :])
+        y_evaluate_reshaped = y_evaluate[:, None, None]
+
+        log_probs = self._log_prob_func(y_evaluate_reshaped, mu_reshaped, log_sigma2_reshaped)
+
+        # log_probs.shape = (len(y_evaluate), n_monte, len(x))
+        return log_probs
 
     def sigma_stoch2(self, x, n_monte=50):
         self._compute_predictions(x, n_monte=n_monte)
 
         # variance of a log-normal dist, from Wikipedia
         # https://en.wikipedia.org/wiki/Log-normal_distribution
-        sigma_stoch2 = (torch.exp(self._sigma2) - 1.) * torch.exp(2. * self._mu + self._sigma2)
+        sigma_stoch2 = (torch.exp(self._sigma2s) - 1.) * torch.exp(2. * self._mus + self._sigma2s)
         sigma_stoch2 = torch.mean(sigma_stoch2, axis=0) # mean over Monte-Carlo weight samples
         return sigma_stoch2
 
@@ -418,22 +553,77 @@ class BNN_lognormal(BNN):
         self._compute_predictions(x, n_monte=n_monte)
 
         # TODO: we could also compute the std of the modes or medians?
-        mean = torch.exp(self._mu + self._sigma2 / 2.)
+        mean = torch.exp(self._mus + self._sigma2s / 2.)
         sigma_pred2 = torch.var(mean, axis=0)
 
         return sigma_pred2
 
     def sigma_tot2(self, x, n_monte=50):
-        sigma_tot2 = self.sigma_pred2(x, n_monte=n_monte)**2 + self.sigma_stoch2(x, n_monte=n_monte)**2 
-        return sigma_tot2
+        # inefficient, but who cares
+        return self.sigma_pred2(x, n_monte=n_monte) + self.sigma_stoch2(x, n_monte=n_monte)
 
-    def distribution(self, x, n_monte=50):
-        # TODO
-        raise NotImplemented("Not yet implemented!")
+    def draw_distribution(self, x_single_event, ax1, ax2, x_range_in_sigma=3, n_monte=50):
+        '''Draw for a single input data point the full predicted distribtuion.
+
+        @args:
+            'x_single_event': single data point to draw distribution for. Should have dimensions
+                x_single_event.shape = (n_features)
+            ax1, ax2: matpltolib.axes objects to draw distributions into
+            x_range_in_sigma: x-axis range given in Standard deviatons of the distribution,
+                e.g. x_range_in_sigma = 3 -> Draws distribution in range[mean - 3*std, mean + (3+1)*sigma].
+                There is more space to the right side for a possible legend.
+        '''
+        x_single_event_reshaped = x_single_event[None, :]
+
+        # compute plotting range
+        mean = self.mean(x_single_event_reshaped, n_monte=n_monte)
+        var = self.sigma_stoch2(x_single_event_reshaped, n_monte=n_monte)
+        x_min = mean - x_range_in_sigma * torch.sqrt(var)
+        x_max = mean + (x_range_in_sigma+1) * torch.sqrt(var) # +1 to have more space for the legend
+        device = x_min.get_device()
+        x_test = torch.linspace(x_min.item(), x_max.item(), 1000).to(device)
+
+        # reshape arrays so likelihood computations work
+        self._compute_predictions(x_single_event_reshaped, n_monte=n_monte)
+        x_test_reshaped = x_test[None, :]
+        mus_reshaped = self._mus            # shape = (n_monte, 1)
+        sigma2s_reshaped = self._sigma2s    # shape = (n_monte, 1)
+
+        # compute likelihood
+        log_prob = self._log_prob_func(x_test_reshaped, mus_reshaped, torch.log(sigma2s_reshaped))
+        likelihood = torch.exp(log_prob)
+
+        # compute mean and mode
+        mean = self.mean(x_single_event_reshaped, n_monte=n_monte)
+        mode = self.mode(x_single_event_reshaped, n_monte=n_monte)
+        mean = mean.cpu().detach().numpy()
+        mode = mode.cpu().detach().numpy()
+
+        # average over Bayesian weight samples
+        likelihood_avg = likelihood.mean(axis=0).cpu().detach().numpy()
+        likelihood = likelihood.cpu().detach().numpy()
+        x_test = x_test.cpu().detach().numpy()
+
+        # draw indivdual weight samples
+        max_draw_plots = np.min([20, likelihood.shape[0]])
+        for i in range(max_draw_plots):
+            if i == 0:
+                ax2.plot(x_test, likelihood[i, :], color="C0", label="Bayesian\nsamples")
+            else:
+                ax2.plot(x_test, likelihood[i, :], color="C0")
+
+        # plot bayesian averaged distributions
+        ax1.plot(x_test, likelihood_avg, color="C1", label="Average")
+
+        # plot mean and mode
+        ax2.axvline(mean, label="Mean", linestyle="-", color="C4")
+        ax1.axvline(mean, label="Mean", linestyle="-", color="C4")
+        ax2.axvline(mode, label="Mode", linestyle="-", color="C3")
+        ax1.axvline(mode, label="Mode", linestyle="-", color="C3")
+
+        return x_test, likelihood
 
 
-# TODO: make all of this more efficient:
-# only call _compute_predictions once!
 class BNN_normal_mixture(BNN):
     '''BNN class specific for regression using a normal mixture likelihood.
        Output of BNN is (num_mixtures * 3) dimensional:
@@ -507,29 +697,43 @@ class BNN_normal_mixture(BNN):
         return torch.cat((y, alphas), axis=1)
 
     def neg_log_likelihood(self, x, targets):
+        ''' Computes average negative log likelihood:
+            -log likelihood = 1/M sum_i -log p(y_i | x_i)
+            @args:
+                x: input data for neural network
+                targets: training labels
+        '''
 
+        # compute output of BNN
         outputs = self.forward(x)
-
-        x = targets[:, None]
         mus = outputs[:, :self.n_mixtures] 
-        logsigma2s = outputs[:, self.n_mixtures:self.n_mixtures*2]
+        log_sigma2s = outputs[:, self.n_mixtures:self.n_mixtures*2]
         alphas = outputs[:, 2*self.n_mixtures:] # have to be between 0 and 1! TODO
+        targets_reshaped = targets[:, None]
 
-        # likelihood is computed as:
-        # -log(likelihood) = -log(sum_i Exp( log(Normal(mu_i, sigma_i)) + log(alpha_i))).
-        # This construction uses the logsumexp method from pytorch which is numerically
-        # more stable then just computing: 
-        # -log(likelihood) = -log(sum_i alpha_i * Normal(mu_i, sigma_i) )
-        log_components = -self._neg_log_gauss(x, mus, logsigma2s) + torch.log(alphas)
-        neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
-
-        return torch.mean(neg_log_likelihood)
+        neg_log_likelihood = -self._log_prob_func(targets_reshaped, mus, log_sigma2s, alphas)
+        return torch.mean(neg_log_likelihood) # mean over batch of data
 
     def _neg_log_gauss(self,  x, mu, logsigma2):
         ''' 1d log-gauss in logsigma2 parameterisation'''
         out = torch.pow(mu - x, 2) / (2 * logsigma2.exp()) + 1./2. * logsigma2
         out += 1./2.*np.log(2.*np.pi) # constant
         return out
+
+    def _log_prob_func(self, x, mus, log_sigma2s, alphas):
+        ''' Logarithm of probability density of log-normal distribution:
+            log f_{mu, sigma2}(x) with f = density of a log-normal dist
+        '''
+
+        # log_prob is computed as:
+        # log(prob) = log(sum_i Exp( log(Normal(mu_i, sigma_i)) + log(alpha_i))).
+        # This construction uses the logsumexp method from pytorch which is numerically
+        # more stable then just computing: 
+        # log(likelihood) = log(sum_i alpha_i * Normal(mu_i, sigma_i) )
+        log_components = -self._neg_log_gauss(x, mus, log_sigma2s) + torch.log(alphas)
+        log_prob = torch.logsumexp(log_components, dim=-1)
+
+        return log_prob
 
     def total_loss(self, x, targets):
         loss = neg_log_likelihood(x, targets) + self.KL()
@@ -601,13 +805,10 @@ class BNN_normal_mixture(BNN):
             sigma2s_reshaped = sigma2s[:, None, :]
             alphas_reshaped = alphas[:, None, :]
 
-            # compute likelihood, TODO: code dubplication
-            log_components = -self._neg_log_gauss(x_test_reshaped, mus_reshaped, torch.log(sigma2s_reshaped))
-            log_components += torch.log(alphas_reshaped)
-            neg_log_likelihood = -torch.logsumexp(log_components, dim=-1)
+            neg_log_prob = -self._log_prob_func(x_test_reshaped, mus_reshaped, torch.log(sigma2s_reshaped), alphas_reshaped)
 
             # choose x-point with largest likelihood value
-            idxs = torch.argmin(neg_log_likelihood, axis=-1)
+            idxs = torch.argmin(neg_log_prob, axis=-1)
             mode = x_test[range(len(idxs)), idxs]
                 
         return mode
@@ -642,11 +843,26 @@ class BNN_normal_mixture(BNN):
         return sigma_pred2
 
     def sigma_tot2(self, x, n_monte=50):
-        sigma_tot2 = self.sigma_pred2(x, n_monte=n_monte)**2 + self.sigma_stoch2(x, n_monte=n_monte)**2 
+        sigma_tot2 = self.sigma_pred2(x, n_monte=n_monte) + self.sigma_stoch2(x, n_monte=n_monte)
         return sigma_tot2
 
 
     def log_probs(self, y_evaluate, x, n_monte=50):
+        '''Computes log_probability for each input data point x and label y_evaluated
+        The BNN predicts p(y | x) per event. The log-liklihood is given by:
+            log_likelihood = sum_i log( p(y_i | x_i) )
+        This method evaluates instead:
+            log_probs_{i, j} = log p(y_i | x_j)
+        So x and y can be choosen independenlty. The output tensor has one more dimension 
+        because no explicit sum over the weight samples is performed:
+
+        @args:
+            y_evaluate: 1d array with label values
+            x: 1d array with input point values, can have different length then y_evaluate
+            n_monte: number of weight samples
+        @returns:
+            log_probs tensor with shape (len(y_evaluate), n_monte, len(x))
+        '''
 
         self._compute_predictions(x, n_monte=n_monte)
 
@@ -656,16 +872,10 @@ class BNN_normal_mixture(BNN):
         sigma2s_reshaped = self._sigma2s[None, :, :, :]
         y_evaluate_reshaped = y_evaluate[:, None, None, None]
 
-        print("Shapes", mus_reshaped.shape, y_evaluate_reshaped.shape)
-
-        log_components = -self._neg_log_gauss(y_evaluate_reshaped, mus_reshaped, torch.log(sigma2s_reshaped))
-        log_components += torch.log(alphas_reshaped)
-        log_likelihood = torch.logsumexp(log_components, dim=-1)
-
-        print(log_likelihood.shape)
+        log_probs = self._log_prob_func(y_evaluate_reshaped, mus_reshaped, torch.log(sigma2s_reshaped), alphas_reshaped)
 
         # log_likelihood.shape = (len(y_evaluate), n_monte, len(x))
-        return log_likelihood
+        return log_probs
 
 
     def draw_distribution(self, x_single_event, ax1, ax2, x_range_in_sigma=3, n_monte=50):
@@ -698,6 +908,7 @@ class BNN_normal_mixture(BNN):
         alphas_reshaped = self._alphas      # shape = (n_monte, 1, 3)
 
         # compute likelihood
+        # not calling self._log_prob_func() here to get individual components as well
         log_components = -self._neg_log_gauss(x_test_reshaped, mus_reshaped, torch.log(sigma2s_reshaped))
         log_components += torch.log(alphas_reshaped)    
         log_likelihood = torch.logsumexp(log_components, dim=-1)

@@ -442,17 +442,12 @@ def main():
             sigma_pred = np.sqrt(model.sigma_pred2(x_test, args.n_monte).cpu().detach().numpy())
             sigma_tot = np.sqrt(model.sigma_tot2(x_test, args.n_monte).cpu().detach().numpy())
 
-
-            if (args.likelihood.lower().startswith("mixturenormal") or
-                args.likelihood.lower().startswith("mixture_normal") or
-                args.likelihood.lower().startswith("mixture-normal")):
-
-                # compute log_probs for plotting
-                device = data.get_device()
-                y_draw = torch.linspace(0, 4, 100).to(device)
-                log_prob = model.log_probs(y_draw, x_test, n_monte=50).cpu().detach().numpy()
-                log_probs.append(log_prob)
-                y_draw = y_draw.cpu().detach().numpy()
+            # compute log_probabilities for plotting full predicted distributions
+            device = data.get_device()
+            y_draw = torch.linspace(0, 4, 100).to(device)
+            log_prob = model.log_probs(y_draw, x_test, n_monte=50).cpu().detach().numpy()
+            log_probs.append(log_prob)
+            y_draw = y_draw.cpu().detach().numpy()
 
             # append everything into lists
             sigma_stochs.append(sigma_stoch)
@@ -476,14 +471,7 @@ def main():
     prediction = np.concatenate(predictions)
     x_test = np.concatenate(x_tests)
 
-    # TODO: implement for other stuff es well
-    if (args.likelihood.lower().startswith("mixturenormal") or
-        args.likelihood.lower().startswith("mixture_normal") or
-        args.likelihood.lower().startswith("mixture-normal")):
-
-        log_prob = np.concatenate(log_probs, axis=-1)
-    else:
-        log_prob = None
+    log_prob = np.concatenate(log_probs, axis=-1)
 
     print(f"Minimum prediction {np.min(prediction)}")
     print(f"Mean sigma_stoch {np.mean(sigma_stoch)}")
@@ -491,11 +479,8 @@ def main():
     print(f"Mean sigma_tot {np.mean(sigma_tot)}")
 
     ########################################################
-    ### Plots for predicted distributions ###
+    ### Additional plot settings ###
      
-    # The BNN predicts an entire distribution over possible labels y for each input data point x
-    # Let's plot this for a bunch of examples with the corresponding true labels
-
     # labels
     label_r_truth = r"$R^{\mathrm{truth}}$"
     label_r_pred = r"$R^{\mathrm{BNN}}$"
@@ -519,50 +504,50 @@ def main():
         label_r_pred = label_r_pred[:-1] + r"_{\mathrm{median}}$"
         label_e_pred = label_e_pred[:-1] + r"_{\mathrm{median}}$"
 
-    #############
 
-    # TODO: implement for other distributions as well
+    ########################################################
+    ### Plots for predicted distributions ###
+     
+    # The BNN predicts an entire distribution over possible labels y for each input data point x
+    # Let's plot this for a bunch of examples with the corresponding truth labels
+
     num_draw = 20
     plot_path_distributions = dir_path + "/" + "full_distribution_examples.pdf"
     if args.bayesian:
-        if (args.likelihood.lower().startswith("mixturenormal") or
-          args.likelihood.lower().startswith("mixture_normal") or
-          args.likelihood.lower().startswith("mixture-normal")):
 
-            # get one batch of test data
-            data = next(iter(test_dataloader))
-            x_one_batch = data[:, :-1].float()
-            y_one_batch = data[:, -1]
+        # get one batch of test data
+        data = next(iter(test_dataloader))
+        x_one_batch = data[:, :-1].float()
+        y_one_batch = data[:, -1]
 
-            # select random indices
-            idxs = np.arange(0, len(x_one_batch), 1)
-            np.random.shuffle(idxs)
-            idxs = idxs[:num_draw]
+        # select random indices
+        idxs = np.arange(0, len(x_one_batch), 1)
+        np.random.shuffle(idxs)
+        idxs = idxs[:num_draw]
 
-            with PdfPages(plot_path_distributions) as pdf:
-                for i, idx in enumerate(idxs):
-                    print(f"Drawing full distribution for index {idx} ({i+1}/{len(idxs)})")
-                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=[5.5*2, 5])
+        with PdfPages(plot_path_distributions) as pdf:
+            for i, idx in enumerate(idxs):
+                print(f"Drawing full distribution for index {idx} ({i+1}/{len(idxs)})")
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=[5.5*2, 5])
 
-                    # draw single distribution
-                    # could be parallized. However, plotting has to be done non-parallel anyway
-                    _, _ = model.draw_distribution(x_one_batch[idx], ax1, ax2)
+                # draw single distribution
+                # could be parallized. However, plotting has to be done non-parallel anyway
+                _, _ = model.draw_distribution(x_one_batch[idx], ax1, ax2)
+                y_single_event = y_one_batch[idx].cpu().detach().numpy()
+                ax1.axvline(y_single_event, linestyle=":", color="black", label=label_r_truth)
+                ax1.set_xlabel("R")
+                ax1.set_ylabel("Normalized")
+                ax1.legend(frameon=False)
 
-                    y_single_event = y_one_batch[idx].cpu().detach().numpy()
-                    ax1.axvline(y_single_event, linestyle=":", color="black", label=label_r_truth)
-                    ax1.set_xlabel("R")
-                    ax1.set_ylabel("Normalized")
-                    ax1.legend(frameon=False)
+                ax2.axvline(y_single_event, linestyle=":", color="black", label=label_r_truth)
+                ax2.set_xlabel("R")
+                ax2.set_ylabel("Normalized")
+                ax2.legend(frameon=False)
 
-                    ax2.axvline(y_single_event, linestyle=":", color="black", label=label_r_truth)
-                    ax2.set_xlabel("R")
-                    ax2.set_ylabel("Normalized")
-                    ax2.legend(frameon=False)
+                pdf.savefig(fig, bbox_inches='tight')
+                plt.close(fig)
 
-                    pdf.savefig(fig, bbox_inches='tight')
-                    plt.close(fig)
-
-                print(f"Saved into {plot_path_distributions}!")
+            print(f"Saved into {plot_path_distributions}!")
 
     ###########################################
     ### Plots for performance evaluation ###
@@ -680,12 +665,28 @@ def main():
             prediction_selected = prediction[mask]
 
             if log_prob is not None:
+
+                # let's plot the full predicted distribution:
+                # The BNN gives us a distribution over possible R-values for each input data point x:
+                #   p^{BNN}(R | x)
+                # What we want to plot here is:
+                #   p(R | true_energy)
+                #
+                # In general if we want to plot p(R | x_specific_feature) we need to marginalize over all
+                # other directions. 
+                #   p^{BNN}(R | x_specific_feature) = int dx p^{BNN}(R | x) * p(x | x_specific_feature)
+                #                                   ~ 1/N sum_i p^{BNN}(R | x_i) with x_i~p(x | x_specific_feature)
+                #                                   ~ Mean_over_test_samples( Predicted_BNN_dist )
+                # We can take for x_i the test dataset. We only need to average over all predicted distributions
+                # in this case x_specific_feature=E_truth
+
                 # log_probs.shape = (len(y_draw), n_monte, len(x_test_dataset))
                 log_prob_selected = log_prob[:, :, mask]
                 prob_reduced = np.mean(np.exp(log_prob_selected), axis=-1)
                 prob_avg = np.mean(prob_reduced, axis=-1) # mean over Bayesian weight samples
                 ax.plot(y_draw, prob_avg, label="BNN predicted\ndistribution")
 
+            # plotting histogram of truth labels and predictions
             _, bin_edges, _ = ax.hist(
                 np.clip(y_selected, xlim[0] + bin_width*0.5, xlim[1] - bin_width*0.5),
                 bins=bins, histtype="step", label=label_r_truth, density=True, color=color_truth
@@ -756,7 +757,6 @@ def main():
         )
         ax.set_xlabel("$\sigma_{\mathrm{pred}}$")
         ax.set_ylabel(label_yaxis)
-        ax.legend(frameon=False)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
@@ -771,7 +771,6 @@ def main():
         )
         ax.set_xlabel("$\sigma_{\mathrm{model}}$")
         ax.set_ylabel(label_yaxis)
-        ax.legend(frameon=False)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
@@ -786,7 +785,6 @@ def main():
         )
         ax.set_xlabel("$\sigma_{\mathrm{tot}}$")
         ax.set_ylabel(label_yaxis)
-        ax.legend(frameon=False)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 

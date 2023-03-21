@@ -372,28 +372,32 @@ def main():
             f.write(out + "\n")
 
     ############################################
-    # Create plots for trainings loss
+    ### Plotting loss as function of epochs ###
 
     with PdfPages(dir_path + "/losses.pdf") as pdf:
+
+        # loop over different contributions to the loss function
         for key in loss_dict.keys():
 
             loss_list = np.array(loss_dict[key])
             loss_val_list = np.array(loss_val_dict[key])
 
+            ### linear scale plot
             fig = plt.figure(figsize=[5.5, 5])
             ax = fig.add_subplot(1, 1, 1)
             ax.plot(np.arange(1, len(loss_list)+1, 1), loss_list, label=key)
             ax.plot(np.arange(1, len(loss_val_list)+1, 1), loss_val_list, label=key + " (validation)")
-
             ax.legend(frameon=False)
             ax.set_xlabel("Epoch")
             ax.set_ylabel("Loss: " + key)
             pdf.savefig(fig, bbox_inches='tight')
             plt.close(fig)
 
+            ### log scale plot
             fig = plt.figure(figsize=[5.5, 5])
             ax = fig.add_subplot(1, 1, 1)
 
+            # shift to positive value for putting it on a log-scale
             if np.min(loss_list) < 0:
                 loss_list_upscaled = loss_list + np.abs(np.min(loss_list))*1.1
                 loss_val_list_upscaled = loss_val_list + np.abs(np.min(loss_list))*1.1 # TODO
@@ -410,11 +414,12 @@ def main():
             pdf.savefig(fig, bbox_inches='tight')
             plt.close(fig)
 
-    ###########################################
-    # Evaluate predictions
+    #####################################################
+    ### Evaluate predictions and uncetrainties of BNN ###
 
     sigma_stochs, sigma_tots, sigma_preds = [], [], []
     predictions, y, x_tests = [], [], []
+    log_probs = []
     for batch, data in enumerate(test_dataloader):
 
         x_test = data[:, :-1].float()
@@ -422,6 +427,7 @@ def main():
 
         if args.bayesian:
 
+            # compute predictions
             if args.prediction.lower() == "mean":
                 prediction = model.mean(x_test, args.n_monte).cpu().detach().numpy()
             elif args.prediction.lower() == "mode":
@@ -430,10 +436,23 @@ def main():
                 prediction = model.median(x_test, args.n_monte).cpu().detach().numpy()
             else:
                 raise NotImplementedError(f"Option for args.prediction not implemented! Given {args.prediction}")
-
+    
+            # compute uncertainties
             sigma_stoch = np.sqrt(model.sigma_stoch2(x_test, args.n_monte).cpu().detach().numpy())
             sigma_pred = np.sqrt(model.sigma_pred2(x_test, args.n_monte).cpu().detach().numpy())
             sigma_tot = np.sqrt(model.sigma_tot2(x_test, args.n_monte).cpu().detach().numpy())
+
+
+            if (args.likelihood.lower().startswith("mixturenormal") or
+                args.likelihood.lower().startswith("mixture_normal") or
+                args.likelihood.lower().startswith("mixture-normal")):
+
+                # compute log_probs for plotting
+                device = data.get_device()
+                y_draw = torch.linspace(0, 4, 100).to(device)
+                log_prob = model.log_probs(y_draw, x_test, n_monte=50).cpu().detach().numpy()
+                log_probs.append(log_prob)
+                y_draw = y_draw.cpu().detach().numpy()
 
             # append everything into lists
             sigma_stochs.append(sigma_stoch)
@@ -457,15 +476,51 @@ def main():
     prediction = np.concatenate(predictions)
     x_test = np.concatenate(x_tests)
 
+    # TODO: implement for other stuff es well
+    if (args.likelihood.lower().startswith("mixturenormal") or
+        args.likelihood.lower().startswith("mixture_normal") or
+        args.likelihood.lower().startswith("mixture-normal")):
+
+        log_prob = np.concatenate(log_probs, axis=-1)
+    else:
+        log_prob = None
+
     print(f"Minimum prediction {np.min(prediction)}")
     print(f"Mean sigma_stoch {np.mean(sigma_stoch)}")
     print(f"Mean sigma_pred {np.mean(sigma_pred)}")
     print(f"Mean sigma_tot {np.mean(sigma_tot)}")
 
     ########################################################
+    ### Plots for predicted distributions ###
+     
+    # The BNN predicts an entire distribution over possible labels y for each input data point x
+    # Let's plot this for a bunch of examples with the corresponding true labels
 
+    # labels
+    label_r_truth = r"$R^{\mathrm{truth}}$"
+    label_r_pred = r"$R^{\mathrm{BNN}}$"
+    label_e_truth = r"$E^{\mathrm{truth}}$"
+    label_e_pred = r"$E^{\mathrm{BNN}}$"
+    label_yaxis = r"Frequency"
+    units_energy = "[GeV]"
 
-    # draw individual predictions
+    # colors
+    color_truth = "C1" 
+    color_pred = "C0"
+
+    if args.prediction.lower() == "mean":
+        # [:-1] -> remove $ sign, very fine tuned
+        label_r_pred = label_r_pred[:-1] + r"_{\mathrm{mean}}$"
+        label_e_pred = label_e_pred[:-1] + r"_{\mathrm{mean}}$"
+    elif args.prediction.lower() == "mode":
+        label_r_pred = label_r_pred[:-1] + r"_{\mathrm{mode}}$"
+        label_e_pred = label_e_pred[:-1] + r"_{\mathrm{mode}}$"
+    elif args.prediction.lower() == "median":
+        label_r_pred = label_r_pred[:-1] + r"_{\mathrm{median}}$"
+        label_e_pred = label_e_pred[:-1] + r"_{\mathrm{median}}$"
+
+    #############
+
     # TODO: implement for other distributions as well
     num_draw = 20
     plot_path_distributions = dir_path + "/" + "full_distribution_examples.pdf"
@@ -491,15 +546,15 @@ def main():
 
                     # draw single distribution
                     # could be parallized. However, plotting has to be done non-parallel anyway
-                    _, _ = model.distributions(x_one_batch[idx], ax1, ax2)
+                    _, _ = model.draw_distribution(x_one_batch[idx], ax1, ax2)
 
                     y_single_event = y_one_batch[idx].cpu().detach().numpy()
-                    ax1.axvline(y_single_event, linestyle=":", color="black", label="True R")
+                    ax1.axvline(y_single_event, linestyle=":", color="black", label=label_r_truth)
                     ax1.set_xlabel("R")
                     ax1.set_ylabel("Normalized")
                     ax1.legend(frameon=False)
 
-                    ax2.axvline(y_single_event, linestyle=":", color="black", label="True R")
+                    ax2.axvline(y_single_event, linestyle=":", color="black", label=label_r_truth)
                     ax2.set_xlabel("R")
                     ax2.set_ylabel("Normalized")
                     ax2.legend(frameon=False)
@@ -510,31 +565,38 @@ def main():
                 print(f"Saved into {plot_path_distributions}!")
 
     ###########################################
-    # create plots
-    plot_path = dir_path + "/" + "eval_without_removing_prep.pdf"
+    ### Plots for performance evaluation ###
+
+    plot_path = dir_path + "/" + "performance.pdf"
+
+    # binning
+    n_bins = 50
+
+    #####################
+    ### Compute pulls ###
+
+    # compute pulls and mse
+    mse_i = np.where(y!=0, (prediction - y) / y, np.zeros_like(y))
+    mse_norm_i_v1 = (prediction - y) / sigma_tot
+    mse_norm_i_v2 = (prediction - y) / sigma_pred
+    mse_norm_i_v3 = (prediction - y) / sigma_stoch
+
+    print("MSE...")
+    mse_i = remove_nans_and_inf(mse_i, replace_value=None)
+    print("MSE norm v1...")
+    mse_norm_i_v1 = remove_nans_and_inf(mse_norm_i_v1, replace_value=None)
+    print("MSE norm v2 ...")
+    mse_norm_i_v2 = remove_nans_and_inf(mse_norm_i_v2, replace_value=None)
+    print("MSE norm v3...")
+    mse_norm_i_v3 = remove_nans_and_inf(mse_norm_i_v3, replace_value=None)
+
+
     with PdfPages(plot_path) as pdf:
 
-        # TODO: remake al of this completely. put all of this in seperate file!
+        ###########################
+        ### r-value plots ###
 
-        # compute pulls and mse
-        mse_i = np.where(y!=0, (prediction - y) / y, np.zeros_like(y))
-        mse_norm_i_v1 = (prediction - y) / sigma_tot
-        mse_norm_i_v2 = (prediction - y) / sigma_pred
-        mse_norm_i_v3 = (prediction - y) / sigma_stoch
-
-        n_bins = 50
-
-        print("MSE...")
-        mse_i = remove_nans_and_inf(mse_i, replace_value=None)
-        print("MSE norm v1...")
-        mse_norm_i_v1 = remove_nans_and_inf(mse_norm_i_v1, replace_value=None)
-        print("MSE norm v2 ...")
-        mse_norm_i_v2 = remove_nans_and_inf(mse_norm_i_v2, replace_value=None)
-        print("MSE norm v3...")
-        mse_norm_i_v3 = remove_nans_and_inf(mse_norm_i_v3, replace_value=None)
-
-        #######################
-
+        ### Plot: 1d histogram, filled=R-values, linear-scale
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
         bins = np.linspace(0, 10, n_bins)
@@ -542,38 +604,43 @@ def main():
         bin_width = bins[1] - bins[0]
         _, bin_edges, _ = ax.hist(
             np.clip(y, xlim[0] + bin_width*0.5, xlim[1] - bin_width*0.5),
-            bins=bins, histtype="step", label="truth"
+            bins=bins, histtype="step", label=label_r_truth, color=color_truth
         )
         ax.hist(
             np.clip(prediction, xlim[0] + bin_width*0.5, xlim[1] - bin_width*0.5),
-            bins=bin_edges, histtype="step", label='prediction'
+            bins=bin_edges, histtype="step", label=label_r_pred, color=color_pred
         )
+        ax.set_title("Linear Scale")
         ax.set_xlabel("R")
-        ax.set_ylabel("Events")
+        ax.set_ylabel(label_yaxis)
         ax.legend(frameon=False)
         ax.set_xlim(xlim)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
-        # responses log
+        ### Plot: 1d histogram, filled=R-values, log-scale
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
         xlim = [np.min(y), np.max(y)]
         _, bin_edges, _ = ax.hist(
             np.clip(y, xlim[0], xlim[1]),
-            bins=n_bins, histtype="step", label="truth"
+            bins=n_bins, histtype="step", label=label_r_truth, color=color_truth
         )
         ax.hist(
             np.clip(prediction, xlim[0], xlim[1]),
-            bins=bin_edges, histtype="step", label='prediction'
+            bins=bin_edges, histtype="step", label=label_r_pred, color=color_pred
         )
+        ax.set_title("Log Scale")
         ax.set_xlabel("R")
-        ax.set_ylabel("Events")
+        ax.set_ylabel(label_yaxis)
         ax.set_yscale('log')
         ax.legend(frameon=False)
         ax.set_xlim(xlim)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
+
+        ##############################
+        ### Energy / r-value plots ###
 
         # TODO: make this better!
         # hardcoding inverse preprocessing
@@ -582,170 +649,151 @@ def main():
         energy_log = x_test[:, 0] * std_scale + mean_scale
         energy = np.exp(energy_log)
 
+        ### Plot: 2d histogram, filled = R_predicted vs E_truth
         n = 10000
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
         energy_predicted = energy * 1. / prediction
         energy_true = energy * 1. / y
         ax.hist2d(energy_true, prediction, bins=[np.linspace(0, 100, 50), np.linspace(0, 5, 50)], norm=mpl.colors.LogNorm())
-        ax.set_xlabel("True energy")
-        ax.set_ylabel("R")
+        ax.set_xlabel(label_e_truth + " " + units_energy)
+        ax.set_ylabel(label_r_pred)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
-        fig = plt.figure(figsize=[5.5, 5])
-        ax = fig.add_subplot(1, 1, 1)
-        ax.scatter(energy_predicted[:n], energy_true[:n], s=0.2)
-        ax.plot([y.min(), y.max()], [y.min(), y.max()], linestyle=":", color="black")
-        ax.set_xlabel("True energy")
-        ax.set_xlim([0, 100])
-        ax.set_ylim([0, 100])
-        ax.set_ylabel("Predicted energy")
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
+        ### Plot: 1d histograms, filled = R-values, but conditioned in True energy bins
+        energy_bins = np.linspace(0, 100, 30)
 
+        # loop over true energy bins
+        for i in range(energy_bins.shape[0]-1):
+
+            print(f"Making distribution plot {i+1} / {len(energy_bins)-1}")
+            low = energy_bins[i]
+            high = energy_bins[i+1]
+            fig = plt.figure(figsize=[5.5, 5])
+            ax = fig.add_subplot(1, 1, 1)
+            bins = np.linspace(0, 3, n_bins)
+            bin_width = bins[1] - bins[0]
+            xlim = [bins[0], bins[-1]]
+            mask = np.all([energy > low, energy <=high], axis=0)
+            y_selected = y[mask]
+            prediction_selected = prediction[mask]
+
+            if log_prob is not None:
+                # log_probs.shape = (len(y_draw), n_monte, len(x_test_dataset))
+                log_prob_selected = log_prob[:, :, mask]
+                prob_reduced = np.mean(np.exp(log_prob_selected), axis=-1)
+                prob_avg = np.mean(prob_reduced, axis=-1) # mean over Bayesian weight samples
+                ax.plot(y_draw, prob_avg, label="BNN predicted\ndistribution")
+
+            _, bin_edges, _ = ax.hist(
+                np.clip(y_selected, xlim[0] + bin_width*0.5, xlim[1] - bin_width*0.5),
+                bins=bins, histtype="step", label=label_r_truth, density=True, color=color_truth
+            )
+            _, bin_edges, _ = ax.hist(
+                np.clip(prediction_selected, xlim[0] + bin_width*0.5, xlim[1] - bin_width*0.5),
+                bins=bins, histtype="step", label=label_r_pred, density=True, color=color_pred
+            )
+            ax.set_xlabel("R")
+            ax.set_title(label_e_truth + f" = [{np.round(low, 1)}, {np.round(high, 1)}]" + " " + units_energy)
+            ax.set_ylabel(label_yaxis)
+            ax.legend(frameon=False)
+            ax.set_xlim(xlim)
+            pdf.savefig(fig, bbox_inches='tight')
+            plt.close(fig)
+
+        ### Plot: 2d histogram, filled = predicted energy vs true energy
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
         ax.hist2d(energy_predicted, energy_true, bins=[np.linspace(0, 100, 50), np.linspace(0, 100, 50)], norm=mpl.colors.LogNorm())
         ax.plot([y.min(), y.max()], [y.min(), y.max()], linestyle=":", color="black")
-        ax.set_xlabel("True energy")
+        ax.set_xlabel(label_e_truth + " " + units_energy)
         ax.set_xlim([0, 100])
         ax.set_ylim([0, 100])
-        ax.set_ylabel("Predicted energy")
+        ax.set_ylabel(label_e_pred + " " + units_energy)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
-
+        ### Plot: 1d histogram, filled = energy, linear scale
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
-        ax.hist(energy_predicted, bins=np.linspace(-10, 100, 50), histtype="step", label="Predicted")
-        ax.hist(energy_true, bins=np.linspace(-10, 100, 50), histtype="step", label="True")
-        ax.set_xlabel("Energy")
+        ax.hist(energy_true, bins=np.linspace(-10, 100, 50), histtype="step", label=label_e_truth, color=color_truth)
+        ax.hist(energy_predicted, bins=np.linspace(-10, 100, 50), histtype="step", label=label_e_pred, color=color_pred)
+        ax.set_xlabel("Energy" + " " + units_energy)
         ax.set_yscale("log")
         ax.set_xlim([-30, 100])
         ax.set_ylabel("Frequency")
+        ax.set_title("Linear Scale")
         ax.legend(frameon=False)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
-        fig = plt.figure(figsize=[5.5, 5])
-        ax = fig.add_subplot(1, 1, 1)
-        ax.hist(energy_predicted, bins=np.linspace(-10, 100, 50), histtype="step", label="Predicted")
-        ax.hist(energy_true, bins=np.linspace(-10, 100, 50), histtype="step", label="True")
-        ax.set_xlabel("Energy")
-        ax.set_xlim([-30, 100])
-        ax.set_ylabel("Frequency")
-        ax.legend(frameon=False)
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-        fig = plt.figure(figsize=[5.5, 5])
-        ax = fig.add_subplot(1, 1, 1)
-        ax.hist(energy_predicted, bins=np.linspace(-10, 10, 50), histtype="step", label="Predicted")
-        ax.hist(energy_true, bins=np.linspace(-10, 10, 50), histtype="step", label="True")
-        ax.set_xlabel("Energy")
-        ax.set_xlim([-10, 10])
-        ax.set_ylabel("Frequency")
-        ax.legend(frameon=False)
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
+        ### Plot: 1d histogram, filled = energy, log scale
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
         bins = np.logspace(-2, 3, 100+1)
-        ax.hist(energy_predicted,bins=bins, histtype="step", label='E BNN')
-        ax.hist(energy_true,bins=bins, histtype="step", label='E true')
-        ax.set_xlabel("Energy [GeV]")
+        ax.hist(energy_true,bins=bins, histtype="step", label=label_e_truth, color=color_truth)
+        ax.hist(energy_predicted,bins=bins, histtype="step", label=label_e_pred, color=color_pred)
+        ax.set_xlabel("Energy" + " " + units_energy)
         ax.set_xscale('log')
         ax.set_yscale('log')
+        ax.set_title("Log Scale")
         ax.legend(frameon=False)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
+        #################################
+        ### Uncertainty plots ###
 
-        # amplitudes scatter, log plot
+        ### Plot: 1d histogram, filled = sigma_pred
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
-        n = 10000
-        mask = prediction[:n] > 0
-        ax.scatter(prediction[:n][mask], y[:n][mask], s=0.2)
-        ylim = [y[:n][mask].min(), y[:n][mask].max()]
-        xlim = ylim
-        ax.plot(xlim, xlim, linestyle=":", color="black")
-        ax.set_xlim(xlim)
-        ax.set_ylim(ylim)
-        ax.set_yscale('log')
-        ax.set_xscale('log')
-        ax.set_xlabel("Prediction")
-        ax.set_ylabel("Truth")
-        ax.legend(frameon=False)
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-        # ampltiudes scatter
-        fig = plt.figure(figsize=[5.5, 5])
-        ax = fig.add_subplot(1, 1, 1)
-        n = 10000
-        mask = np.ones_like(prediction[:n]).astype('bool')
-        ax.scatter(prediction[:n][mask], y[:n][mask], s=0.2)
-        ax.plot(xlim, xlim, linestyle=":", color="black")
-        ax.set_xlim(xlim)
-        ax.set_ylim(ylim)
-        ax.set_xlabel("Prediction")
-        ax.set_ylabel("Truth")
-        ax.legend(frameon=False)
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-        # uncerainties
-        print("Plot uncertainties...")
-        fig = plt.figure(figsize=[5.5, 5])
-        ax = fig.add_subplot(1, 1, 1)
-        _, bin_edges, _ = ax.hist(sigma_pred, bins=n_bins, histtype="step")
-        ax.set_xlabel("$\sigma_{\mathrm{pred}}$")
-        ax.set_ylabel("Events")
-        ax.legend(frameon=False)
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-        fig = plt.figure(figsize=[5.5, 5])
-        ax = fig.add_subplot(1, 1, 1)
-        _, bin_edges, _ = ax.hist(sigma_stoch, bins=n_bins, histtype="step")
-        ax.set_xlabel("$\sigma_{\mathrm{model}}$")
-        ax.set_ylabel("Events")
-        ax.legend(frameon=False)
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-        fig = plt.figure(figsize=[5.5, 5])
-        ax = fig.add_subplot(1, 1, 1)
-        _, bin_edges, _ = ax.hist(sigma_tot, bins=n_bins, histtype="step")
-        ax.set_xlabel("$\sigma_{\mathrm{tot}}$")
-        ax.set_ylabel("Events")
-        ax.legend(frameon=False)
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-        # performance
-        print("Plot performance...")
-        fig = plt.figure(figsize=[5.5, 5])
-        ax = fig.add_subplot(1, 1, 1)
-
-        # gauss fit
-        loc = np.mean(mse_i)
-        scale = np.std(mse_i)
-        x = np.linspace(loc - 3 * scale, loc + 3 * scale)
-        y = norm.pdf(x, loc=loc, scale=scale)
-        bins = np.linspace(loc - 3 * scale, loc + 3 * scale)
-        bin_width = bins[1] - bins[0]
-        #ax.plot(x, y, label="Gauss ({:4.4f} {:4.4f})".format(loc, scale))
+        bins = np.linspace(0, 0.3, 50)
+        xlim = [bins[0], bins[-1]]
         _, bin_edges, _ = ax.hist(
-            np.clip(mse_i, bins[0] + bin_width*0.5, bins[-1] - bin_width*0.5),
-            bins=bins, histtype="step", label="BNN", density=True
+                np.clip(sigma_pred, xlim[0] + bin_width*0.5, xlim[1] - bin_width*0.5),
+                bins=bins, histtype="step", color=color_pred
         )
+        ax.set_xlabel("$\sigma_{\mathrm{pred}}$")
+        ax.set_ylabel(label_yaxis)
+        ax.legend(frameon=False)
+        pdf.savefig(fig, bbox_inches='tight')
+        plt.close(fig)
 
-        # pulls
-        print("Plot pulls...")
+        ### Plot: 1d histogram, filled = sigma_stoch
+        fig = plt.figure(figsize=[5.5, 5])
+        ax = fig.add_subplot(1, 1, 1)
+        bins = np.linspace(0, 10, 50)
+        xlim = [bins[0], bins[-1]]
+        _, bin_edges, _ = ax.hist(
+                np.clip(sigma_stoch, xlim[0] + bin_width*0.5, xlim[1] - bin_width*0.5),
+                bins=bins, histtype="step", color=color_pred
+        )
+        ax.set_xlabel("$\sigma_{\mathrm{model}}$")
+        ax.set_ylabel(label_yaxis)
+        ax.legend(frameon=False)
+        pdf.savefig(fig, bbox_inches='tight')
+        plt.close(fig)
+
+        ### Plot: 1d histogram, filled = sigma_tot
+        fig = plt.figure(figsize=[5.5, 5])
+        ax = fig.add_subplot(1, 1, 1)
+        bins = np.linspace(0, 10, 50)
+        xlim = [bins[0], bins[-1]]
+        _, bin_edges, _ = ax.hist(
+                np.clip(sigma_tot, xlim[0] + bin_width*0.5, xlim[1] - bin_width*0.5),
+                bins=bins, histtype="step", color=color_pred
+        )
+        ax.set_xlabel("$\sigma_{\mathrm{tot}}$")
+        ax.set_ylabel(label_yaxis)
+        ax.legend(frameon=False)
+        pdf.savefig(fig, bbox_inches='tight')
+        plt.close(fig)
+
+        ###################################
+        ### Pull plots ###
+
+        ### Plot: 1d histogram, filled=pull_total
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
 
@@ -767,6 +815,7 @@ def main():
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
+        ### Plot: 1d histogram, filled=pull_pred
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
 
@@ -788,6 +837,7 @@ def main():
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
+        ### Plot: 1d histogram, filled=pull_model
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
 

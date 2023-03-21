@@ -161,7 +161,7 @@ class BNN(nn.Module):
         return
 
     def KL(self):
-        ''' Return total KL-divergence.
+        ''' Return total KL-divergence between variational dist and prior.
         '''
 
         kl = 0
@@ -584,7 +584,7 @@ class BNN_normal_mixture(BNN):
             x_min, _ = torch.min(mus, axis=-1)
             x_max, _ = torch.max(mus, axis=-1)
             x_min *= 0.9
-            x_max*= 1.1
+            x_max *= 1.1
             
             # create array of ranges to check for maxima
             x_tests = []
@@ -645,7 +645,30 @@ class BNN_normal_mixture(BNN):
         sigma_tot2 = self.sigma_pred2(x, n_monte=n_monte)**2 + self.sigma_stoch2(x, n_monte=n_monte)**2 
         return sigma_tot2
 
-    def distributions(self, x_single_event, ax1, ax2, x_range_in_sigma=3, n_monte=50):
+
+    def log_probs(self, y_evaluate, x, n_monte=50):
+
+        self._compute_predictions(x, n_monte=n_monte)
+
+        # self._mus.shape = (n_monte, len(x), 3)
+        mus_reshaped = self._mus[None, :, :, :]
+        alphas_reshaped = self._alphas[None, :, :, :]
+        sigma2s_reshaped = self._sigma2s[None, :, :, :]
+        y_evaluate_reshaped = y_evaluate[:, None, None, None]
+
+        print("Shapes", mus_reshaped.shape, y_evaluate_reshaped.shape)
+
+        log_components = -self._neg_log_gauss(y_evaluate_reshaped, mus_reshaped, torch.log(sigma2s_reshaped))
+        log_components += torch.log(alphas_reshaped)
+        log_likelihood = torch.logsumexp(log_components, dim=-1)
+
+        print(log_likelihood.shape)
+
+        # log_likelihood.shape = (len(y_evaluate), n_monte, len(x))
+        return log_likelihood
+
+
+    def draw_distribution(self, x_single_event, ax1, ax2, x_range_in_sigma=3, n_monte=50):
         '''Draw for a single input data point the full predicted distribtuions.
 
         @args:
@@ -670,9 +693,9 @@ class BNN_normal_mixture(BNN):
 
         # reshape arrays so likelihood computations work
         x_test_reshaped = x_test[None, :, None]
-        mus_reshaped = self._mus
-        sigma2s_reshaped = self._sigma2s
-        alphas_reshaped = self._alphas
+        mus_reshaped = self._mus            # shape = (n_monte, 1, 3)
+        sigma2s_reshaped = self._sigma2s    # shape = (n_monte, 1, 3)
+        alphas_reshaped = self._alphas      # shape = (n_monte, 1, 3)
 
         # compute likelihood
         log_components = -self._neg_log_gauss(x_test_reshaped, mus_reshaped, torch.log(sigma2s_reshaped))

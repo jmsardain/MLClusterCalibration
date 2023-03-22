@@ -1,15 +1,52 @@
+######################
+### Imports ###
+
 import math
 import sys
 import torch
 import torch.nn as nn
 import numpy as np
 
+######################
+
 class VBLinear(nn.Module):
-    def __init__(self, in_features, out_features, prior_prec=1.0, _map=False):
+    '''Linear layer of a Bayesian neural network (BNN). 
+       The BNN represented here is a variational mean-field
+       Bayesian neural network implemented via the local
+       reparameterization trick.
+
+       The linear layer works similar to the standard linear layer of pytorch.
+       The only difference is that each trainable weight is represented by
+       a trainable normal distribution. Each normal distribution comes with
+       two trainable parameters:
+            self.mu_w      = vector of mean-values
+            self.logsig2_w = vector of log(sigma^2) values
+       Learning log(sigma^2) is numerically more stable than learning sigma^2.
+
+       The prior is set to a normal distribution as well. This assumption
+       enters the explicit formula given in the KL() method.
+
+       To sample different outputs the reset_random() method should be used:
+            num_weight_samples = 50
+            layer = VBLinear(...)
+            for i in range(num_weight_samples):
+                layer.reset_random()
+                prediction = layer(input)
+
+       @args:
+            in_features: number of input features
+            out_features: number of output features
+            prior_prec: hyperparameter, defined as:
+                prior_prec = 1 / sigma_{prior}^2
+                where sigma_{prior} is the width of
+                the normal prior distribution N(mu=0, sigma=sigma_{prior})
+    '''
+   
+    def __init__(self, in_features, out_features, prior_prec=1.0):
         super(VBLinear, self).__init__()
         self.n_in = in_features
         self.n_out = out_features
-        self.map = _map
+        self.map = False
         self.prior_prec = prior_prec
         self.random = None
         self.bias = nn.Parameter(torch.Tensor(out_features))
@@ -18,24 +55,27 @@ class VBLinear(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
+        '''Reset / initialize trainable parameters randomlly'''
         stdv = 1. / math.sqrt(self.mu_w.size(1))
         self.mu_w.data.normal_(0, stdv)
         self.logsig2_w.data.zero_().normal_(-9, 0.001)
         self.bias.data.zero_()
 
     def reset_random(self):
+        '''Force resampling from the variational distributions.'''
         self.random = None
 
     def KL(self, loguniform=False):
-        if loguniform:
-            k1 = 0.63576; k2 = 1.87320; k3 = 1.48695
-            log_alpha = self.logsig2_w - 2 * torch.log(self.mu_w.abs() + 1e-8)
-            kl = -th.sum(k1 * torch.sigmoid(k2 + k3 * log_alpha)
-                         - 0.5 * F.softplus(-log_alpha) - k1)
-        else:
-            logsig2_w = self.logsig2_w.clamp(-20, 11)
-            kl = 0.5 * (self.prior_prec * (self.mu_w.pow(2) + logsig2_w.exp())
-                        - logsig2_w - 1 - np.log(self.prior_prec)).sum()
+        '''KL-diergence of two normal distributions:
+              KL(
+                N(mu = self.mu_w, sigma^2 = self.logsig2_2.exp()) |
+                N(mu = 0,         sigma^2 = 1/prior_prec)
+              )
+        # TODO: is the order correct in formula given above?
+        '''
+        logsig2_w = self.logsig2_w.clamp(-20, 11)
+        kl = 0.5 * (self.prior_prec * (self.mu_w.pow(2) + logsig2_w.exp())
+                    - logsig2_w - 1 - np.log(self.prior_prec)).sum()
         return kl
 
     def forward(self, input):
@@ -50,9 +90,12 @@ class VBLinear(nn.Module):
             return mu_out + var_out.sqrt() * torch.randn_like(mu_out)
 
         else:
+
+            # MAP: Maximum a posteriori method
             if self.map:
                 return nn.functional.linear(input, self.mu_w, self.bias)
 
+            # usual evaluation via reparameterization trick (NOT local)
             logsig2_w = self.logsig2_w.clamp(-20, 11)
             if self.random is None:
                 self.random = torch.randn_like(self.logsig2_w)

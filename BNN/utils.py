@@ -1,3 +1,10 @@
+''' Collection of functions used for training and other things.
+
+@athors = Michel Luchmann, 
+          Jad Mathieu Sardain
+'''
+
+
 #####################################
 ### Imports ###
 
@@ -6,15 +13,29 @@ from torch import nn
 import numpy as np
 import os
 
-#####################################
-### MPL SETTINGS ###
-
-#import matplotlib.pyplot as plt
-#plt.style.use('plotting.mplstyle')
-
 ####################################
 
 def train_loop(dataloader, model, optimizer, loss_dict):
+    '''Train loop for training a Bayesian neural network.
+    
+    @args:
+        dataloader: needs to be iterable and provide pytorch
+          tensors as an output. Shape of tensors should be
+          data.shape = (batch_size, num_input_featues + 1) where
+          the last entry represents the truth label
+          data[:, -1] = label / trainings-target
+        model: Bayesian neural network mode. Needs
+          neg_log_likelihood() and KL() method to construct
+          loss function
+        optimizer: torch.optim object
+        loss_dict: dictonrary to save loss-values in. Should
+           be initialized with:
+             from collections import defaultdict
+             loss_dict = defaultdict(list)
+
+    @returns:
+        loss_dict
+    '''
 
     size = len(dataloader.dataset)
     model.train()
@@ -70,6 +91,27 @@ def train_loop(dataloader, model, optimizer, loss_dict):
 
 
 def val_pass(dataloader, model, loss_dict):
+    '''Validation pass for training a Bayesian neural network.
+    Should be called after each epoch.
+    
+    @args:
+        dataloader: needs to be iterable and provide pytorch
+          tensors as an output. Shape of tensors should be
+          data.shape = (batch_size, num_input_featues + 1) where
+          the last entry represents the truth label
+          data[:, -1] = label / trainings-target
+        model: Bayesian neural network mode. Needs
+          neg_log_likelihood() and KL() method to construct
+          loss function
+        loss_dict: dictonrary to save loss-values in. Should
+           be initialized with:
+             from collections import defaultdict
+             loss_dict = defaultdict(list)
+
+    @returns:
+        loss_dict
+    '''
+
 
     loss_tot, kl_tot, neg_log_tot, mse_tot = 0, 0, 0, 0
     mse_norm_tot = 0
@@ -272,9 +314,19 @@ def neg_log_gauss(outputs, targets):
     return torch.mean(out)
 
 def create_directory(dir_path):
+    '''Create directory with given path.
+    If directory already exists, a number will be added to the name.
+    If the directory name already ends with a number the next possible number
+    which is not yet taken wil be choosen. E.g.:
+        dir_path = /path/to/dir45
+        #-> dir45 already exists -> creates /path/to/dir46 instead
+
+    The maximu number of directory names this function tries to create 
+        is restricted to MAX_TRIALS.
+    '''
 
     # just for safity
-    MAX_TRIALS = 10
+    MAX_TRIALS = 30
 
     # create new directory with name dir_path
     try:
@@ -326,6 +378,7 @@ def create_directory(dir_path):
 
 
 def remove_nans_and_inf(x, replace_value=None):
+    '''Removes or replaced inf and NaN values in a given np.array'''
 
     mask = np.isfinite(x)
     if (~mask).sum() > 0:

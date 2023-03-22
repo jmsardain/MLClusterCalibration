@@ -1,9 +1,16 @@
-""" Training
+""" Training a BNN for regression.
 
-This code was created for making some test trainnigs.
-It was never really meant for sharing, so it's a bit messy.
+Dataset represents a calibration task. Input data is a set of high level features
+extracted from the detector simulations. Training target is the response defined as:
+    R = E_truth / E_cluster
+where E_cluster is the naive energy stored in a cluster and E_truth is the Monte
+Carlo truth energy.
 
-@author: Michel Luchmann
+This code requires three (training, test, validation) statistically independent 
+already preprocessed datasets.
+
+@authors: Michel Luchmann
+          Jad Mathieu Sardain
 """
 
 ####################################
@@ -160,8 +167,12 @@ def main():
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-
+    
+    # If True console output is redirected to the txt files std.out and err.out
+    # created inside of the output directory
     redirect_outputs = False
+
+    # default number of mixtures of normal-mixture model
     n_mixtures_default = 2
 
     ########################################

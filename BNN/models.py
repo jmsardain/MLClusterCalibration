@@ -74,7 +74,7 @@ class BNN(nn.Module):
         
         torch.mean(prediction, axis=0)
 
-    @Args:
+    @args:
         training_size = total number of traning examples (NOT batch size).
             Needed for correct prefactor for KL-divergence
         inner_layers = list of integers to represent number of nodes per layer.
@@ -205,7 +205,7 @@ class BNN_normal(BNN):
                 Should be highly training size dependent. Captures statistical limitations
                 of trainin data.
 
-       @Args:
+       @args:
             See BNN class
     '''
 
@@ -420,7 +420,7 @@ class BNN_lognormal(BNN):
 
         [1]: https://en.wikipedia.org/wiki/Log-normal_distribution
 
-       @Args:
+       @args:
             See BNN class
     '''
 
@@ -665,7 +665,7 @@ class BNN_normal_mixture(BNN):
 
         [1]: https://en.wikipedia.org/wiki/Log-normal_distribution
 
-       @Args:
+       @args:
             See BNN class,
             n_mixtures = Number of normal distributions to construct mixture distribution with.
     '''

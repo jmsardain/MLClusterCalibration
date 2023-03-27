@@ -51,114 +51,125 @@ def main():
     # TODO: add infos
     parser.add_argument(
         '--output_path',
-        default="/remote/gpu03/luchmann/ML_Amplitudes/BNN/output/zjets_first_test_new_new_new_new_new",
-        type=str
+        default = "/remote/gpu03/luchmann/ML_Amplitudes/BNN/output/zjets_first_test_new_new_new_new_new",
+        help = "output path to store training results (plots and network weights) in",
+        type = str
     )
     parser.add_argument(
         '--data_path_train',
-        default="/remote/gpu03/luchmann/ML_Amplitudes/BNN/dataset/Momenta_2_6__G__G__e-__e+__G__G__d__db_2M_train_ampl_prep_log_removed_negative_events_new.npy",
-        type=str
+        default = "/remote/gpu03/luchmann/ML_Amplitudes/BNN/dataset/Momenta_2_6__G__G__e-__e+__G__G__d__db_2M_train_ampl_prep_log_removed_negative_events_new.npy",
+        help = "path to trainnig data file, should be npy format",
+        type = str
     )
     parser.add_argument(
         '--data_path_test',
-        default="/remote/gpu03/luchmann/ML_Amplitudes/BNN/dataset/Momenta_2_6__G__G__e-__e+__G__G__d__db_2M_test_ampl_prep_log_removed_negative_events_new.npy",
-        type=str
+        default = "/remote/gpu03/luchmann/ML_Amplitudes/BNN/dataset/Momenta_2_6__G__G__e-__e+__G__G__d__db_2M_test_ampl_prep_log_removed_negative_events_new.npy",
+        help = "path to test data file, should be npy format, used for evaluation of network performance after training",
+        type = str
     )
     parser.add_argument(
         '--data_path_val',
-        default="/remote/gpu03/luchmann/ML_Amplitudes/BNN/dataset/Momenta_2_6__G__G__e-__e+__G__G__d__db_2M_val_ampl_prep_log_removed_negative_events_new.npy",
-        type=str
+        default = "/remote/gpu03/luchmann/ML_Amplitudes/BNN/dataset/Momenta_2_6__G__G__e-__e+__G__G__d__db_2M_val_ampl_prep_log_removed_negative_events_new.npy",
+        help = "path to validation data file, should be npy format, used during training to monitor overfitting",
+        type = str
     )
     parser.add_argument(
         '--lr',
-        default=0.001,
-        type=float
+        default = 0.001,
+        help = "learning rate of optimizer",
+        type = float
     )
     parser.add_argument(
         '--batch_size', '--bs',
-        default=128,
-        type=int
+        default = 128,
+        help = "batch size used during training",
+        type = int
     )
     parser.add_argument(
         '--test_batch_size',
-        default=8192,
-        type=int
+        default = 8192,
+        help = "batch size for test dataset, lower if you have memory problems",
+        type = int
     )
     parser.add_argument(
         '--epochs',
-        default=50,
-        type=int
+        default = 50,
+        help = "number of epochs to train network with",
+        type = int
     )
     parser.add_argument(
         '--n_monte',
-        default=50,
-        type=int
+        default = 50,
+        help = "number of monte carlo samples to draw from the variational distributions q(omega) for the evaluation of the network predictions",
+        type = int
     )
     parser.add_argument(
         '--train_size',
-        default=10000,
-        type=int
+        default = 10000,
+        help = "number of training examples used for training, should be lower or equal actual training data set size",
+        type = int
     )
     parser.add_argument(
         '--val_size',
-        default=1000,
-        type=int
+        default = 1000,
+        help = "number of validation examples used, should be lower or equal the actual validation data set size",
+        type = int
     )
     parser.add_argument(
         '--test_size',
-        default=10000,
-        type=int
+        default = 10000,
+        help = "number of test examples used for evaluation phase, should be lower or equal the actual test data set size",
+        type = int
     )
     parser.add_argument(
         '--save_weights_iter',
-        default=-1,
-        type=int
+        default = -1,
+        help = "number of epochs between saving intermediate state of network, if -1 don't save intermediate state",
+        type = int
     )
     parser.add_argument(
         '--layer', '--layers',
-        default=[50, 50, 50],
-        nargs='+',
-        type=int
+        default = [50, 50, 50],
+        nargs = '+',
+        help = "list of neurons per layer, e.g. '--layer 32 32 64' will create neural net with 3 hidden layers and 32, 32 and 64 neurons",
+        type = int
     )
     parser.add_argument(
         '--activation_inner',
-        default='tanh',
-        type=str,
+        default = 'tanh',
+        help = "activation function for inner layers, options can be looked up in models.py",
+        type = str,
     )
     parser.add_argument(
         '--activation_last',
-        default=None,
-        type=str,
+        default = None,
+        help = "activaiton function for last layer, if this option has an impact depends on the specific model used",
+        type = str,
     )
-
     parser.add_argument(
         '--explanation',
-       default="",
-       nargs="+",
-       type=str
-    )
-
-    parser.add_argument(
-        '--target',
-        default="resp", # ME, FULL,
-        type=str,
+       default = "",
+       nargs = "+",
+       help = "placeholder string which can be used to save a description of the training and why it was performed",
+       type = str
     )
     parser.add_argument(
         '--bayesian',
-        default=True,
-        type=bool,
+        default = True,
+        help = "boolean, if true use Bayesian neural network, if false use deterministic model",
+        type = bool,
     )
-
     parser.add_argument(
         '--likelihood',
-        default='normal',
-        type=str,
+        default = 'normal',
+        help = "what likelihood to use, currently implemented options: normal, lognormal, mixturenormal(x) where x is the number of mixtures to use",
+        type = str,
     )
-
     parser.add_argument(
         '--prediction',
-        default='mean',
-        type=str,
+        default = 'mean',
+        help = "what singular value to extract as a prediction from the predicted distribution, options: mean, median, mode",
+        type = str,
     )
 
     args = parser.parse_args()
@@ -270,8 +281,38 @@ def main():
                 activation_last=args.activation_last
             ).to(device)
 
+        elif (args.likelihood.lower().startswith("mixturelognormal") or
+          args.likelihood.lower().startswith("mixture_log_normal") or
+          args.likelihood.lower().startswith("mixture-log-normal")):
+
+            # extract number of gaussian mixtures from input string
+            # e.g.: 'mixturenormal(3)' -> 3
+            likelihood_string = args.likelihood.replace(" ", "") # remove white spave if any
+            if likelihood_string.endswith(")"):
+                digit = args.likelihood[-2]
+                if digit.isdigit():
+                    n_mixtures = int(digit)
+                    print(f"Number of mixture components to be used {n_mixtures}")
+                else:
+                    print(f"Failed to infere number of mixture for Normal mixture from input string!"
+                          f" Given {likelihood_string} -> {digit}"
+                          f" Using default value of {n_mixtures_default}!")
+                    n_mixtures = n_mixtures_default
+            else:
+                print(f"Number of mixture components not specified. Using default value of {n_mixtures_default}")
+                n_mixtures = n_mixtures_default
+
+            model = BNN_log_normal_mixture(
+                args.train_size,
+                args.layer,
+                input_dim,
+                n_mixtures=n_mixtures,
+                activation_inner=args.activation_inner,
+                activation_last=args.activation_last
+            ).to(device)
+
         else:
-            raise NotImplemented(f"Option for args.likelihood is not implemented! Given {args.likelihood}")
+            raise NotImplementedError(f"Option for args.likelihood is not implemented! Given {args.likelihood}")
 
     else:
         # TODO: re-implement these options as well
@@ -292,7 +333,7 @@ def main():
         elif args.likelihood.lower() in ["mixture-normal", "mixturenormal", "mixture_normal"]:
             pass
         else:
-            raise NotImplemented(f"Option for args.likelihood is not implemented! Given {args.likelihood}")
+            raise NotImplementedError(f"Option for args.likelihood is not implemented! Given {args.likelihood}")
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(model)
@@ -428,6 +469,9 @@ def main():
     #####################################################
     ### Evaluate predictions and uncetrainties of BNN ###
 
+    # add explanation
+    y_draw = torch.linspace(0, 4, 100).to(device)
+
     sigma_stochs, sigma_tots, sigma_preds = [], [], []
     predictions, y, x_tests = [], [], []
     log_probs = []
@@ -440,11 +484,11 @@ def main():
 
             # compute predictions
             if args.prediction.lower() == "mean":
-                prediction = model.mean(x_test, args.n_monte).cpu().detach().numpy()
+                prediction = model.mean(x_test, args.n_monte)
             elif args.prediction.lower() == "mode":
-                prediction = model.mode(x_test, args.n_monte).cpu().detach().numpy()
+                prediction = model.mode(x_test, args.n_monte)
             elif args.prediction.lower() == "median":
-                prediction = model.median(x_test, args.n_monte).cpu().detach().numpy()
+                prediction = model.median(x_test, args.n_monte)
             else:
                 raise NotImplementedError(f"Option for args.prediction not implemented! Given {args.prediction}")
     
@@ -454,11 +498,16 @@ def main():
             sigma_tot = np.sqrt(model.sigma_tot2(x_test, args.n_monte).cpu().detach().numpy())
 
             # compute log_probabilities for plotting full predicted distributions
-            device = data.get_device()
-            y_draw = torch.linspace(0, 4, 100).to(device)
+            #device = data.get_device()
+            #y_draw = torch.linspace(0, 4, 100).to(device)
+            #if batch == 0:
+            #    n_use = 1000
+            #    y_draw = prediction[:n_use]
             log_prob = model.log_probs(y_draw, x_test, n_monte=50).cpu().detach().numpy()
             log_probs.append(log_prob)
-            y_draw = y_draw.cpu().detach().numpy()
+
+            # detach and convert to numpy
+            prediction = prediction.cpu().detach().numpy()
 
             # append everything into lists
             sigma_stochs.append(sigma_stoch)
@@ -474,6 +523,9 @@ def main():
         else:
             # TODO: rewrite
             raise NotImplementedError("Not implemented!")
+
+    # TODO
+    y_draw = y_draw.cpu().detach().numpy()
 
     y = np.concatenate(y)
     sigma_stoch = np.concatenate(sigma_stochs)
@@ -658,7 +710,9 @@ def main():
         plt.close(fig)
 
         ### Plot: 1d histograms, filled = R-values, but conditioned in True energy bins
-        energy_bins = np.linspace(0, 100, 30)
+        #energy_bins = np.linspace(0, 100, 30)
+        energy_bins = np.array([0, 0.4]) # low energy bin
+        energy_bins = np.concatenate([energy_bins, np.linspace(1, 100, 30)])
 
         # loop over true energy bins
         for i in range(energy_bins.shape[0]-1):
@@ -692,9 +746,15 @@ def main():
                 # in this case x_specific_feature=E_truth
 
                 # log_probs.shape = (len(y_draw), n_monte, len(x_test_dataset))
+                #print(log_prob.shape, mask.shape)
                 log_prob_selected = log_prob[:, :, mask]
                 prob_reduced = np.mean(np.exp(log_prob_selected), axis=-1)
                 prob_avg = np.mean(prob_reduced, axis=-1) # mean over Bayesian weight samples
+                # TODO
+                #idxs = np.argsort(y_draw)
+                #y_draw_sorted = y_draw[idxs]
+                #prob_avg_sorted = prob_avg[idxs]
+
                 ax.plot(y_draw, prob_avg, label="BNN predicted\ndistribution")
 
             # plotting histogram of truth labels and predictions
@@ -727,20 +787,34 @@ def main():
         plt.close(fig)
 
         ### Plot: 1d histogram, filled = energy, linear scale
+
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
-        ax.hist(energy_true, bins=np.linspace(-10, 100, 50), histtype="step", label=label_e_truth, color=color_truth)
-        ax.hist(energy_predicted, bins=np.linspace(-10, 100, 50), histtype="step", label=label_e_pred, color=color_pred)
+
+        # let's compute full predicted dist as well
+        # log_probs.shape = (len(y_draw), n_monte, len(x_test_dataset))
+        #energy_draw = energy[:n_use] / y_draw # y_draw = R-values
+        #log_prob_transf = log_prob + np.log(y_draw / energy[:n_use])[:, None, None]
+        #prob_reduced = np.mean(np.exp(log_prob_transf), axis=-1) # mean over x
+        #prob_avg = np.mean(prob_reduced, axis=-1) # mean over Bayesian weight samples
+        #idxs = np.argsort(energy_draw)
+        #energy_draw = energy_draw[idxs]
+        #prob_avg = prob_avg[idxs]
+        #ax.plot(energy_draw, prob_avg, label="BNN predicted\ndistribution")
+
+        ax.hist(energy_true, bins=np.linspace(-10, 100, 50), histtype="step", label=label_e_truth, color=color_truth, density=True)
+        ax.hist(energy_predicted, bins=np.linspace(-10, 100, 50), histtype="step", label=label_e_pred, color=color_pred, density=True)
         ax.set_xlabel("Energy" + " " + units_energy)
         ax.set_yscale("log")
         ax.set_xlim([-30, 100])
-        ax.set_ylabel("Frequency")
+        ax.set_ylabel("Normalized")
         ax.set_title("Linear Scale")
         ax.legend(frameon=False)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
         ### Plot: 1d histogram, filled = energy, log scale
+
         fig = plt.figure(figsize=[5.5, 5])
         ax = fig.add_subplot(1, 1, 1)
         bins = np.logspace(-2, 3, 100+1)
@@ -750,6 +824,7 @@ def main():
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.set_title("Log Scale")
+        ax.set_ylabel(label_yaxis)
         ax.legend(frameon=False)
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
